@@ -121,3 +121,7 @@ Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allow
  GET / 200 in 50ms (compile: 8ms, render: 42ms)
 ✓ Compiled in 265ms
  GET / 200 in 393ms (compile: 179ms, render: 213ms)
+ GET / 200 in 98ms (compile: 54ms, render: 44ms)
+ GET / 200 in 22ms (compile: 3ms, render: 18ms)
+ GET / 200 in 54ms (compile: 17ms, render: 38ms)
+ GET / 200 in 25ms (compile: 6ms, render: 19ms)
