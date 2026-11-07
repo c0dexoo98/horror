@@ -1,0 +1,612 @@
+     1→// HOLLOW VALE — world builder: cursed village map, collision, lighting, interactables registry
+     2→import * as THREE from 'three';
+     3→import { getTexture, repeatTex, mulberry32 } from './core';
+     4→
+     5→export interface AABB { minX: number; maxX: number; minZ: number; maxZ: number }
+     6→export interface Interactable {
+     7→  id: string;
+     8→  pos: THREE.Vector3;
+     9→  radius: number;
+    10→  prompt: string;
+    11→  enabled: boolean;
+    12→  once?: boolean;
+    13→  used?: boolean;
+    14→  onInteract: (player: unknown) => void;
+    15→  highlight?: THREE.Object3D;
+    16→}
+    17→export interface LampRef { light: THREE.PointLight; base: number; phase: number }
+    18→export interface BrazierRef { id: string; pos: THREE.Vector3; light: THREE.PointLight | null; flame: THREE.Mesh | null; lit: boolean; pos3: THREE.Vector3 }
+    19→export interface DoorRef { id: string; locked: boolean; open: boolean; pivot: THREE.Object3D; collider: AABB }
+    20→
+    21→export interface WorldRefs {
+    22→  root: THREE.Group;
+    23→  colliders: AABB[];
+    24→  occluders: THREE.Mesh[];
+    25→  interactables: Interactable[];
+    26→  lamps: LampRef[];
+    27→  braziers: BrazierRef[];
+    28→  doors: Map<string, DoorRef>;
+    29→  gatePivot: THREE.Object3D | null;
+    30→  stars: THREE.Points;
+    31→  moonMesh: THREE.Mesh;
+    32→  groundMesh: THREE.Mesh;
+    33→  wellBucket: THREE.Object3D | null;
+    34→  wellRope: THREE.Mesh | null;
+    35→}
+    36→
+    37→export const SHEPHERD_WAYPOINTS: THREE.Vector3[] = [
+    38→  new THREE.Vector3(0, 0, 14), new THREE.Vector3(14, 0, 2), new THREE.Vector3(10, 0, -16),
+    39→  new THREE.Vector3(-12, 0, -18), new THREE.Vector3(-22, 0, 0), new THREE.Vector3(-14, 0, 18),
+    40→  new THREE.Vector3(4, 0, 28), new THREE.Vector3(24, 0, 8), new THREE.Vector3(-30, 0, -22),
+    41→  new THREE.Vector3(30, 0, -22), new THREE.Vector3(0, 0, 42),
+    42→];
+    43→
+    44→export const PLAYER_SPAWN = new THREE.Vector3(0, 0, 52);
+    45→
+    46→const rnd = mulberry32(20240613);
+    47→
+    48→function boxMesh(
+    49→  w: number, h: number, d: number, mat: THREE.Material,
+    50→  x: number, y: number, z: number, ry = 0,
+    51→  parent?: THREE.Object3D
+    52→): THREE.Mesh {
+    53→  const geo = new THREE.BoxGeometry(w, h, d);
+    54→  const m = new THREE.Mesh(geo, mat);
+    55→  m.position.set(x, y, z);
+    56→  m.rotation.y = ry;
+    57→  if (parent) parent.add(m);
+    58→  return m;
+    59→}
+    60→
+    61→export function aabbFromCenter(cx: number, cz: number, w: number, d: number): AABB {
+    62→  return { minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 };
+    63→}
+    64→
+    65→export function resolveCollisions(pos: THREE.Vector3, radius: number, colliders: AABB[]) {
+    66→  for (const c of colliders) {
+    67→    const cx = Math.max(c.minX, Math.min(pos.x, c.maxX));
+    68→    const cz = Math.max(c.minZ, Math.min(pos.z, c.maxZ));
+    69→    const dx = pos.x - cx, dz = pos.z - cz;
+    70→    const d2 = dx * dx + dz * dz;
+    71→    if (d2 < radius * radius) {
+    72→      if (d2 > 1e-8) {
+    73→        const d = Math.sqrt(d2);
+    74→        pos.x = cx + (dx / d) * radius;
+    75→        pos.z = cz + (dz / d) * radius;
+    76→      } else {
+    77→        // inside: push out along smallest penetration axis
+    78→        const px = Math.min(pos.x - c.minX, c.maxX - pos.x);
+    79→        const pz = Math.min(pos.z - c.minZ, c.maxZ - pos.z);
+    80→        if (px < pz) pos.x = (pos.x - c.minX < c.maxX - pos.x) ? c.minX - radius : c.maxX + radius;
+    81→        else pos.z = (pos.z - c.minZ < c.maxZ - pos.z) ? c.minZ - radius : c.maxZ + radius;
+    82→      }
+    83→    }
+    84→  }
+    85→}
+    86→
+    87→const _ray = new THREE.Raycaster();
+    88→export function raycastClear(from: THREE.Vector3, to: THREE.Vector3, occluders: THREE.Object3D[]): boolean {
+    89→  const dir = new THREE.Vector3().subVectors(to, from);
+    90→  const len = dir.length();
+    91→  if (len < 0.01) return true;
+    92→  dir.normalize();
+    93→  _ray.set(from, dir);
+    94→  _ray.far = len - 0.1;
+    95→  const hits = _ray.intersectObjects(occluders, false);
+    96→  return hits.length === 0;
+    97→}
+    98→
+    99→/* ------------------------------------------------ */
+   100→
+   101→export function buildWorld(scene: THREE.Scene, quality: 'low' | 'medium' | 'high'): WorldRefs {
+   102→  const root = new THREE.Group();
+   103→  scene.add(root);
+   104→  const colliders: AABB[] = [];
+   105→  const occluders: THREE.Mesh[] = [];
+   106→  const interactables: Interactable[] = [];
+   107→  const lamps: LampRef[] = [];
+   108→  const braziers: BrazierRef[] = [];
+   109→  const doors = new Map<string, DoorRef>();
+   110→
+   111→  const shadows = quality === 'high';
+   112→
+   113→  // ---------- materials ----------
+   114→  const matGround = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('ground'), 48, 48), roughness: 1 });
+   115→  const matDirt = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('dirt'), 8, 3), roughness: 1 });
+   116→  const matPlank = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('plank'), 2, 1), roughness: 0.95 });
+   117→  const matPlankDark = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('plankdark'), 2, 1), roughness: 0.95 });
+   118→  const matStone = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('stone'), 3, 1.5), roughness: 0.9 });
+   119→  const matRoof = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('roof'), 3, 2), roughness: 0.9 });
+   120→  const matBark = new THREE.MeshStandardMaterial({ map: getTexture('bark'), roughness: 1 });
+   121→  const matFoliage = new THREE.MeshStandardMaterial({ color: 0x16210f, roughness: 1 });
+   122→  const matWood = new THREE.MeshStandardMaterial({ map: getTexture('plankdark'), roughness: 0.95 });
+   123→  const matMetal = new THREE.MeshStandardMaterial({ map: getTexture('metal'), roughness: 0.6, metalness: 0.5 });
+   124→  const matStoneDark = new THREE.MeshStandardMaterial({ map: repeatTex(getTexture('stone'), 1, 1), roughness: 0.95, color: 0x8a8a88 });
+   125→  const matGlass = new THREE.MeshStandardMaterial({ color: 0x2a3438, roughness: 0.2, metalness: 0.4, transparent: true, opacity: 0.55 });
+   126→  const matFireOff = new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 1 });
+   127→
+   128→  // ---------- ground & roads ----------
+   129→  const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), matGround);
+   130→  ground.rotation.x = -Math.PI / 2;
+   131→  ground.receiveShadow = shadows;
+   132→  root.add(ground);
+   133→  const road = (x: number, z: number, w: number, d: number) => {
+   134→    const r = new THREE.Mesh(new THREE.PlaneGeometry(w, d), matDirt);
+   135→    r.rotation.x = -Math.PI / 2;
+   136→    r.position.set(x, 0.02, z);
+   137→    root.add(r);
+   138→  };
+   139→  road(0, 20, 4, 66);          // main: square to gate (south)
+   140→  road(0, -16, 4, 30);         // square to church
+   141→  road(16, -8, 34, 3.4);       // to barn
+   142→  road(-16, 8, 26, 3.4);       // to clinic
+   143→  road(-12, -20, 24, 3.2);     // to cemetery
+   144→  road(12, -24, 18, 3.2);      // to annex
+   145→  road(16, 10, 14, 3.2);       // to farmhouse
+   146→  road(2, 24, 18, 3.2);        // to workshop
+   147→
+   148→  // ---------- sky: stars + moon ----------
+   149→  const starGeo = new THREE.BufferGeometry();
+   150→  const starPos: number[] = [];
+   151→  for (let i = 0; i < 500; i++) {
+   152→    const a = rnd() * Math.PI * 2, r = 300 + rnd() * 100;
+   153→    const y = 60 + rnd() * 160;
+   154→    starPos.push(Math.cos(a) * r, y, Math.sin(a) * r);
+   155→  }
+   156→  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+   157→  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x9fb4d8, size: 1.4, sizeAttenuation: true, fog: false }));
+   158→  root.add(stars);
+   159→  const moonMesh = new THREE.Mesh(
+   160→    new THREE.CircleGeometry(9, 32),
+   161→    new THREE.MeshBasicMaterial({ color: 0xcfd8e8, fog: false, transparent: true, opacity: 0.9 })
+   162→  );
+   163→  moonMesh.position.set(-120, 110, -160);
+   164→  moonMesh.lookAt(0, 0, 0);
+   165→  root.add(moonMesh);
+   166→
+   167→  // ---------- global lights ----------
+   168→  const hemi = new THREE.HemisphereLight(0x27334d, 0x0a0c08, 0.72);
+   169→  scene.add(hemi);
+   170→  const moon = new THREE.DirectionalLight(0x8ea6cc, 0.68);
+   171→  moon.position.set(-60, 90, -80);
+   172→  if (shadows) {
+   173→    moon.castShadow = true;
+   174→    moon.shadow.mapSize.set(2048, 2048);
+   175→    moon.shadow.camera.left = -90; moon.shadow.camera.right = 90;
+   176→    moon.shadow.camera.top = 90; moon.shadow.camera.bottom = -90;
+   177→    moon.shadow.camera.far = 260;
+   178→  }
+   179→  scene.add(moon);
+   180→
+   181→  // ---------- helpers ----------
+   182→  const addCollider = (c: AABB) => colliders.push(c);
+   183→  const wall = (x: number, y: number, z: number, w: number, h: number, d: number, mat: THREE.Material, solid = true) => {
+   184→    const m = boxMesh(w, h, d, mat, x, y, z);
+   185→    m.castShadow = shadows; m.receiveShadow = shadows;
+   186→    root.add(m);
+   187→    occluders.push(m);
+   188→    if (solid) addCollider(aabbFromCenter(x, z, w, d));
+   189→    return m;
+   190→  };
+   191→
+   192→  // gable roof: two slanted boxes
+   193→  const gableRoof = (x: number, y: number, z: number, w: number, d: number) => {
+   194→    const s = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.25, d * 0.78), matRoof);
+   195→    s.position.set(x, y + d * 0.19, z - d * 0.22);
+   196→    s.rotation.x = Math.atan2(d * 0.5, d * 0.42) * 0.9;
+   197→    s.castShadow = shadows;
+   198→    root.add(s); occluders.push(s);
+   199→    const s2 = s.clone();
+   200→    s2.position.z = z + d * 0.22;
+   201→    s2.rotation.x = -s.rotation.x;
+   202→    root.add(s2); occluders.push(s2);
+   203→    const ridge = boxMesh(w + 0.9, 0.3, 0.6, matWood, x, y + d * 0.36, z);
+   204→    root.add(ridge);
+   205→  };
+   206→
+   207→  // window: dark emissive pane
+   208→  const windowPane = (x: number, y: number, z: number, ry: number, lit: boolean) => {
+   209→    const m = boxMesh(1.3, 1.1, 0.08, new THREE.MeshStandardMaterial({
+   210→      color: lit ? 0xffb45a : 0x0c0f14, emissive: lit ? 0xff9a2e : 0x000000, emissiveIntensity: lit ? 0.7 : 0, roughness: 0.4,
+   211→    }), x, y, z, ry);
+   212→    root.add(m);
+   213→    return m;
+   214→  };
+   215→
+   216→  const lampPost = (x: number, z: number) => {
+   217→    const post = boxMesh(0.16, 3.2, 0.16, matWood, x, 1.6, z);
+   218→    root.add(post);
+   219→    const head = boxMesh(0.5, 0.5, 0.5, matMetal, x, 3.3, z);
+   220→    root.add(head);
+   221→    const glass = boxMesh(0.36, 0.36, 0.36, new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffa53a, emissiveIntensity: 1.4 }), x, 3.3, z);
+   222→    root.add(glass);
+   223→    addCollider(aabbFromCenter(x, z, 0.3, 0.3));
+   224→    const light = new THREE.PointLight(0xff9a3a, 9, 17, 1.7);
+   225→    light.position.set(x, 3.4, z);
+   226→    root.add(light);
+   227→    lamps.push({ light, base: 9, phase: rnd() * 10 });
+   228→  };
+   229→
+   230→  const brazier = (id: string, x: number, z: number) => {
+   231→    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.35, 0.5, 10), matMetal);
+   232→    bowl.position.set(x, 0.9, z);
+   233→    root.add(bowl);
+   234→    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 0.8, 8), matMetal);
+   235→    leg.position.set(x, 0.4, z);
+   236→    root.add(leg);
+   237→    addCollider(aabbFromCenter(x, z, 0.9, 0.9));
+   238→    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.8, 8), matFireOff);
+   239→    flame.position.set(x, 1.55, z);
+   240→    root.add(flame);
+   241→    const b: BrazierRef = { id, pos: new THREE.Vector3(x, 1.2, z), light: null, flame, lit: false, pos3: new THREE.Vector3(x, 1.2, z) };
+   242→    braziers.push(b);
+   243→    interactables.push({
+   244→      id, pos: new THREE.Vector3(x, 1.2, z), radius: 2.4, prompt: 'Light the brazier', enabled: true, once: true,
+   245→      highlight: bowl,
+   246→      onInteract: () => { /* handled by quests */ },
+   247→    });
+   248→  };
+   249→
+   250→  // interior furniture
+   251→  const furn = (kind: string, x: number, z: number, ry = 0) => {
+   252→    switch (kind) {
+   253→      case 'table':
+   254→        boxMesh(1.8, 0.08, 1.0, matWood, x, 0.78, z, ry, root);
+   255→        boxMesh(0.12, 0.78, 0.12, matWood, x - 0.75, 0.39, z - 0.35, 0, root);
+   256→        boxMesh(0.12, 0.78, 0.12, matWood, x + 0.75, 0.39, z - 0.35, 0, root);
+   257→        boxMesh(0.12, 0.78, 0.12, matWood, x - 0.75, 0.39, z + 0.35, 0, root);
+   258→        boxMesh(0.12, 0.78, 0.12, matWood, x + 0.75, 0.39, z + 0.35, 0, root);
+   259→        addCollider(aabbFromCenter(x, z, 1.8, 1.0));
+   260→        break;
+   261→      case 'bed':
+   262→        boxMesh(1.2, 0.35, 2.2, matWood, x, 0.28, z, ry, root);
+   263→        boxMesh(1.1, 0.18, 1.9, new THREE.MeshStandardMaterial({ map: getTexture('cloth'), roughness: 1 }), x, 0.55, z, ry, root);
+   264→        addCollider(aabbFromCenter(x, z, 1.3, 2.3));
+   265→        break;
+   266→      case 'shelf':
+   267→        boxMesh(0.4, 1.8, 1.6, matWood, x, 0.9, z, ry, root);
+   268→        addCollider(aabbFromCenter(x, z, 0.5, 1.7));
+   269→        break;
+   270→      case 'crate':
+   271→        boxMesh(0.9, 0.9, 0.9, matPlank, x, 0.45, z, ry + (rnd() - 0.5) * 0.4, root);
+   272→        addCollider(aabbFromCenter(x, z, 1.0, 1.0));
+   273→        break;
+   274→      case 'hay':
+   275→        boxMesh(1.4, 1.0, 1.4, new THREE.MeshStandardMaterial({ color: 0x6b5a2a, roughness: 1 }), x, 0.5, z, ry, root);
+   276→        addCollider(aabbFromCenter(x, z, 1.5, 1.5));
+   277→        break;
+   278→      case 'pew':
+   279→        boxMesh(2.4, 0.45, 0.5, matWood, x, 0.45, z, ry, root);
+   280→        boxMesh(2.4, 0.5, 0.12, matWood, x, 0.85, z - 0.2, ry, root);
+   281→        addCollider(aabbFromCenter(x, z, 2.5, 0.6));
+   282→        break;
+   283→      case 'mortar': {
+   284→        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.16, 0.24, 10), matStoneDark);
+   285→        m.position.set(x, 0.92, z);
+   286→        root.add(m);
+   287→        break;
+   288→      }
+   289→      case 'workbench':
+   290→        boxMesh(2.2, 0.1, 0.9, matPlank, x, 0.85, z, ry, root);
+   291→        boxMesh(0.15, 0.85, 0.15, matWood, x - 0.9, 0.42, z - 0.3, 0, root);
+   292→        boxMesh(0.15, 0.85, 0.15, matWood, x + 0.9, 0.42, z - 0.3, 0, root);
+   293→        boxMesh(0.15, 0.85, 0.15, matWood, x - 0.9, 0.42, z + 0.3, 0, root);
+   294→        boxMesh(0.15, 0.85, 0.15, matWood, x + 0.9, 0.42, z + 0.3, 0, root);
+   295→        addCollider(aabbFromCenter(x, z, 2.3, 1.0));
+   296→        break;
+   297→      case 'grave': {
+   298→        const st = boxMesh(0.7, 0.9 + rnd() * 0.3, 0.16, matStoneDark, x, 0.5, z, (rnd() - 0.5) * 0.2);
+   299→        st.castShadow = shadows;
+   300→        root.add(st);
+   301→        addCollider(aabbFromCenter(x, z, 0.8, 0.5));
+   302→        break;
+   303→      }
+   304→    }
+   305→  };
+   306→
+   307→  // house with a door gap on one side. N = -z, S = +z, W = -x, E = +x
+   308→  interface HouseCfg {
+   309→    x: number; z: number; w: number; d: number; h: number;
+   310→    door: 'N' | 'S' | 'E' | 'W';
+   311→    doorW?: number;
+   312→    locked?: string; // door id if locked
+   313→    windows?: { side: 'N' | 'S' | 'E' | 'W'; off: number; lit?: boolean }[];
+   314→    interior?: [string, number, number, number?][];
+   315→    roof?: boolean;
+   316→    stone?: boolean;
+   317→  }
+   318→  const makeHouse = (cfg: HouseCfg) => {
+   319→    const { x, z, w, d, h } = cfg;
+   320→    const mat = cfg.stone ? matStone : matPlank;
+   321→    const dw = cfg.doorW ?? 1.4;
+   322→    const wallSegs = (side: 'N' | 'S' | 'E' | 'W', winOffs: number[]) => {
+   323→      const horiz = side === 'N' || side === 'S';
+   324→      const fixed = side === 'N' ? z - d / 2 : side === 'S' ? z + d / 2 : side === 'W' ? x - w / 2 : x + w / 2;
+   325→      const len = horiz ? w : d;
+   326→      const isDoorSide = side === cfg.door;
+   327→      const segments: [number, number][] = isDoorSide
+   328→        ? [[-len / 2, -dw / 2], [dw / 2, len / 2]]
+   329→        : [[-len / 2, len / 2]];
+   330→      for (const [a, b] of segments) {
+   331→        const segLen = b - a;
+   332→        if (segLen < 0.05) continue;
+   333→        const mid = (a + b) / 2;
+   334→        if (horiz) wall(x + mid, h / 2, fixed, segLen, h, 0.3, mat);
+   335→        else wall(fixed, h / 2, z + mid, 0.3, h, segLen, mat);
+   336→      }
+   337→      // lintel above door
+   338→      if (isDoorSide) {
+   339→        if (horiz) wall(x, h - 0.35, fixed, dw, 0.7, 0.3, mat, false);
+   340→        else wall(fixed, h - 0.35, z, 0.3, 0.7, dw, mat, false);
+   341→      }
+   342→      for (const off of winOffs) {
+   343→        if (isDoorSide && Math.abs(off) < 2) continue;
+   344→        const wy = h * 0.55;
+   345→        if (horiz) windowPane(x + off, wy, fixed + (side === 'N' ? -0.18 : 0.18), 0, !!cfg.windows?.find(ww => ww.off === off)?.lit);
+   346→        else windowPane(fixed + (side === 'W' ? -0.18 : 0.18), wy, z + off, Math.PI / 2, !!cfg.windows?.find(ww => ww.off === off)?.lit);
+   347→      }
+   348→    };
+   349→    (['N', 'S', 'E', 'W'] as const).forEach(side => {
+   350→      const wins = (cfg.windows || []).filter(v => v.side === side).map(v => v.off);
+   351→      wallSegs(side, wins);
+   352→    });
+   353→    // floor
+   354→    const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), matWood);
+   355→    floor.rotation.x = -Math.PI / 2;
+   356→    floor.position.set(x, 0.03, z);
+   357→    root.add(floor);
+   358→    if (cfg.roof !== false) gableRoof(x, h, z, w, d);
+   359→    (cfg.interior || []).forEach(([kind, ix, iz, r]) => furn(kind, x + ix, z + iz, r || 0));
+   360→  };
+   361→
+   362→  // locked door leaf
+   363→  const makeDoor = (id: string, x: number, z: number, ry: number, locked: boolean) => {
+   364→    const pivot = new THREE.Object3D();
+   365→    pivot.position.set(x, 0, z);
+   366→    pivot.rotation.y = ry;
+   367→    const leaf = boxMesh(1.36, 2.2, 0.12, matPlankDark, 0.68, 1.1, 0);
+   368→    leaf.castShadow = shadows;
+   369→    pivot.add(leaf);
+   370→    const knob = boxMesh(0.1, 0.1, 0.16, matMetal, 1.15, 1.05, 0);
+   371→    pivot.add(knob);
+   372→    root.add(pivot);
+   373→    // collider approximated as closed door across gap
+   374→    const horiz = Math.abs(Math.sin(ry)) < 0.5;
+   375→    const col = horiz ? aabbFromCenter(x + 0.68 * Math.cos(ry), z, 1.4, 0.5) : aabbFromCenter(x, z + 0.68 * Math.cos(ry), 0.5, 1.4);
+   376→    addCollider(col);
+   377→    const d: DoorRef = { id, locked, open: false, pivot, collider: col };
+   378→    doors.set(id, d);
+   379→    interactables.push({
+   380→      id: 'door_' + id,
+   381→      pos: new THREE.Vector3(x, 1.2, z),
+   382→      radius: 2.6,
+   383→      prompt: locked ? 'Locked' : 'Open door',
+   384→      enabled: true,
+   385→      onInteract: () => { /* handled by quests */ },
+   386→    });
+   387→    return d;
+   388→  };
+   389→
+   390→  /* ---------------- BUILDINGS ---------------- */
+   391→
+   392→  // Church (north) — big stone
+   393→  makeHouse({
+   394→    x: 0, z: -30, w: 15, d: 10, h: 5, stone: true, door: 'S',
+   395→    windows: [{ side: 'E', off: -3, lit: false }, { side: 'W', off: 3, lit: false }],
+   396→    interior: [
+   397→      ['pew', -3, -2.5, 0], ['pew', 0, -2.5, 0], ['pew', 3, -2.5, 0],
+   398→      ['pew', -3, 0.5, 0], ['pew', 3, 0.5, 0],
+   399→      ['table', 0, -4.2, 0],
+   400→    ],
+   401→  });
+   402→  // church spire
+   403→  const spire = new THREE.Mesh(new THREE.ConeGeometry(1.6, 4.5, 4), matRoof);
+   404→  spire.position.set(0, 8, -34.5);
+   405→  spire.castShadow = shadows;
+   406→  root.add(spire);
+   407→  wall(0, 7, -34.5, 2.6, 4.5, 2.6, matStone, false);
+   408→  const churchDoor = makeDoor('church', 0.75, -24.9, 0, true);
+   409→  // altar cross
+   410→  boxMesh(0.14, 1.6, 0.14, matWood, 0, 4.3, -34.4, 0, root);
+   411→  boxMesh(0.8, 0.14, 0.14, matWood, 0, 4.6, -34.4, 0, root);
+   412→
+   413→  // Barn (east)
+   414→  makeHouse({
+   415→    x: 28, z: -8, w: 13, d: 9, h: 4.2, door: 'W', doorW: 2.2,
+   416→    interior: [['hay', 3.5, -2], ['hay', 3.5, 1.5], ['crate', -3, -2.5], ['crate', -1.5, 2.8, 0.5], ['workbench', 1, 3.6, 0]],
+   417→  });
+   418→  // barn silo
+   419→  const silo = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 6, 12), matMetal);
+   420→  silo.position.set(36.5, 3, -11);
+   421→  silo.castShadow = shadows;
+   422→  root.add(silo); occluders.push(silo);
+   423→  addCollider(aabbFromCenter(36.5, -11, 3.4, 3.4));
+   424→
+   425→  // Miller's house (south-west) — brazier #1
+   426→  makeHouse({
+   427→    x: -20, z: 12, w: 10, d: 8, h: 3.4, door: 'E',
+   428→    windows: [{ side: 'S', off: -2, lit: true }, { side: 'W', off: 0 }],
+   429→    interior: [['table', -2.5, -2], ['bed', 3, -2.2, 0], ['shelf', -4.4, 1.5, Math.PI / 2], ['crate', 2, 2.6]],
+   430→  });
+   431→
+   432→  // Farmhouse (south-east) — brazier #2
+   433→  makeHouse({
+   434→    x: 22, z: 18, w: 12, d: 9, h: 3.6, door: 'W',
+   435→    windows: [{ side: 'S', off: -3, lit: true }, { side: 'N', off: 2 }],
+   436→    interior: [['table', 2.5, -2.4], ['bed', -4, -2.6], ['shelf', 5.4, 2, Math.PI / 2], ['crate', -2, 2.8], ['crate', 0.5, 3.2]],
+   437→  });
+   438→
+   439→  // Chapel annex (north-east) — brazier #3
+   440→  makeHouse({
+   441→    x: 18, z: -28, w: 8, d: 7, h: 3.4, stone: true, door: 'S',
+   442→    windows: [{ side: 'W', off: 0 }],
+   443→    interior: [['table', 0, -2.4], ['pew', 0, 1.2, 0]],
+   444→  });
+   445→
+   446→  // Clinic (west) — mortar + beds
+   447→  makeHouse({
+   448→    x: -28, z: 10, w: 10, d: 8, h: 3.4, door: 'E',
+   449→    windows: [{ side: 'N', off: -2, lit: false }, { side: 'S', off: 2, lit: true }],
+   450→    interior: [['bed', -3, -2.2], ['bed', -3, 1.4], ['table', 2.8, -2], ['mortar', 2.8, -2], ['shelf', -4.4, 0, Math.PI / 2]],
+   451→  });
+   452→
+   453→  // Workshop (south)
+   454→  makeHouse({
+   455→    x: -5, z: 30, w: 7, d: 6, h: 3, door: 'N',
+   456→    interior: [['workbench', 0, -1.6, 0], ['crate', 2.4, 1.8], ['crate', -2.2, 1.6, 0.7]],
+   457→  });
+   458→
+   459→  // Hunter's cabin (far east)
+   460→  makeHouse({
+   461→    x: 45, z: -30, w: 7, d: 6, h: 3, door: 'W',
+   462→    interior: [['bed', 1.8, -1.5], ['shelf', -2.9, 0, Math.PI / 2], ['crate', 1.5, 1.8]],
+   463→  });
+   464→
+   465→  // Greenhouse (near clinic)
+   466→  const gh = new THREE.Group();
+   467→  const ghFrame = new THREE.Mesh(new THREE.BoxGeometry(6, 2.6, 4.4), matGlass);
+   468→  ghFrame.position.set(-40, 1.3, 20);
+   469→  gh.add(ghFrame);
+   470→  const ghFrameBars = boxMesh(6.2, 0.12, 4.6, matWood, -40, 2.6, 20);
+   471→  root.add(ghFrameBars);
+   472→  gh.position.set(0, 0, 0);
+   473→  root.add(gh);
+   474→  addCollider(aabbFromCenter(-40, 20, 6.2, 4.6));
+   475→
+   476→  // Cemetery (north-west): fence + graves + dead tree + altar
+   477→  const fenceMat = matWood;
+   478→  const fence = (x: number, z: number, w: number, d: number) => {
+   479→    wall(x, 0.75, z, w, 1.5, 0.18, fenceMat);
+   480→  };
+   481→  fence(-33, -46.4, 26, 0.18);
+   482→  fence(-33, -24.4, 26, 0.18);
+   483→  fence(-46.4, -35.4, 0.18, 22);
+   484→  fence(-19.6, -40, 0.18, 14); // gap at south entrance
+   485→  for (let gx = -44; gx <= -24; gx += 4) {
+   486→    for (let gz = -44; gz <= -28; gz += 4) {
+   487→      if (rnd() < 0.75) furn('grave', gx + (rnd() - 0.5), gz + (rnd() - 0.5));
+   488→    }
+   489→  }
+   490→  // cemetery altar
+   491→  const altar = boxMesh(1.6, 1.0, 1.0, matStoneDark, -33, 0.5, -41);
+   492→  altar.castShadow = shadows;
+   493→  root.add(altar);
+   494→  addCollider(aabbFromCenter(-33, -41, 1.7, 1.1));
+   495→  interactables.push({
+   496→    id: 'cemetery_altar', pos: new THREE.Vector3(-33, 1, -41), radius: 2.6, prompt: 'Place the amulet', enabled: true, once: true,
+   497→    highlight: altar, onInteract: () => { /* quests */ },
+   498→  });
+   499→
+   500→  // Well (center square)
+   501→  const wellX = 0, wellZ = 2;
+   502→  const wellBody = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 1.2, 12), matStoneDark);
+   503→  wellBody.position.set(wellX, 0.6, wellZ);
+   504→  root.add(wellBody); occluders.push(wellBody);
+   505→  addCollider(aabbFromCenter(wellX, wellZ, 2.6, 2.6));
+   506→  boxMesh(0.12, 2.4, 0.12, matWood, wellX - 1.1, 1.2, wellZ, 0, root);
+   507→  boxMesh(0.12, 2.4, 0.12, matWood, wellX + 1.1, 1.2, wellZ, 0, root);
+   508→  gableRoof(wellX, 2.4, wellZ, 3, 2.4);
+   509→  const wellRope = boxMesh(0.03, 2.0, 0.03, new THREE.MeshStandardMaterial({ color: 0x8a7a5a }), wellX, 1.4, wellZ);
+   510→  root.add(wellRope);
+   511→  const wellBucket = boxMesh(0.4, 0.35, 0.4, matWood, wellX, 0.5, wellZ);
+   512→  root.add(wellBucket);
+   513→  const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.4, 8), matMetal);
+   514→  crank.rotation.z = Math.PI / 2;
+   515→  crank.position.set(wellX, 2.1, wellZ);
+   516→  root.add(crank);
+   517→  interactables.push({
+   518→    id: 'well_crank', pos: new THREE.Vector3(wellX + 1.4, 1.4, wellZ), radius: 2.6, prompt: 'Turn the crank', enabled: true, once: false,
+   519→    highlight: crank, onInteract: () => { /* quests */ },
+   520→  });
+   521→
+   522→  // Gate (south) — big wooden gate in palisade
+   523→  const gateZ = 55;
+   524→  wall(-6.5, 1.6, gateZ, 9, 3.2, 0.5, matPlankDark);
+   525→  wall(6.5, 1.6, gateZ, 9, 3.2, 0.5, matPlankDark);
+   526→  const gatePivot = new THREE.Object3D();
+   527→  gatePivot.position.set(-1.8, 0, gateZ);
+   528→  const gateLeaf = boxMesh(3.5, 3.0, 0.3, matPlankDark, 1.75, 1.5, 0);
+   529→  gatePivot.add(gateLeaf);
+   530→  boxMesh(0.25, 0.25, 0.5, matMetal, 3.3, 1.5, 0, 0, gatePivot);
+   531→  root.add(gatePivot);
+   532→  addCollider(aabbFromCenter(0, gateZ, 3.8, 0.7));
+   533→  interactables.push({
+   534→    id: 'forest_gate', pos: new THREE.Vector3(0, 1.4, gateZ), radius: 3.2, prompt: 'Open the gate', enabled: true, once: false,
+   535→    highlight: gateLeaf, onInteract: () => { /* quests */ },
+   536→  });
+   537→
+   538→  // village fountain ruins (decor)
+   539→  const rubble = boxMesh(1.2, 0.5, 1.2, matStoneDark, 8, 0.25, 8, 0.4);
+   540→  root.add(rubble);
+   541→  addCollider(aabbFromCenter(8, 8, 1.3, 1.3));
+   542→
+   543→  /* ---------------- lamps ---------------- */
+   544→  lampPost(-6, 8); lampPost(6, 8); lampPost(-4, -18); lampPost(4, 42); lampPost(24, -14); lampPost(-26, 6);
+   545→
+   546→  /* ---------------- braziers (quest targets) ---------------- */
+   547→  brazier('brazier_miller', -20, 15.2);   // inside miller house corner
+   548→  brazier('brazier_farm', 22, 21.2);      // farmhouse
+   549→  brazier('brazier_annex', 18, -30.2);    // annex
+   550→
+   551→  /* ---------------- trees (instanced) ---------------- */
+   552→  const treeCount = quality === 'low' ? 90 : 150;
+   553→  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 5.5, 6);
+   554→  const trunkMesh = new THREE.InstancedMesh(trunkGeo, matBark, treeCount);
+   555→  const folGeo1 = new THREE.ConeGeometry(1.9, 4.6, 7);
+   556→  const folGeo2 = new THREE.ConeGeometry(1.4, 3.4, 7);
+   557→  const fol1 = new THREE.InstancedMesh(folGeo1, matFoliage, treeCount);
+   558→  const fol2 = new THREE.InstancedMesh(folGeo2, matFoliage, treeCount);
+   559→  const dummy = new THREE.Object3D();
+   560→  let placed = 0;
+   561→  const treeRings: [number, number, number, number][] = [
+   562→    // border bands: x range, z range
+   563→    [-88, 88, -88, -66], [-88, 88, 66, 88],
+   564→    [-88, -66, -66, 66], [66, 88, -66, 66],
+   565→    [-88, -52, 26, 52], [52, 88, 8, 48], [-52, -44, 28, 44],
+   566→    [30, 50, 26, 44], [-58, -40, -58, -46], [36, 56, -52, -34],
+   567→  ];
+   568→  while (placed < treeCount) {
+   569→    const band = treeRings[placed % treeRings.length];
+   570→    const x = band[0] + rnd() * (band[1] - band[0]);
+   571→    const z = band[2] + rnd() * (band[3] - band[2]);
+   572→    const s = 0.8 + rnd() * 0.9;
+   573→    dummy.position.set(x, 2.6 * s, z);
+   574→    dummy.scale.setScalar(s);
+   575→    dummy.rotation.y = rnd() * Math.PI;
+   576→    dummy.updateMatrix();
+   577→    trunkMesh.setMatrixAt(placed, dummy.matrix);
+   578→    dummy.position.y = 5.6 * s;
+   579→    dummy.updateMatrix();
+   580→    fol1.setMatrixAt(placed, dummy.matrix);
+   581→    dummy.position.y = 7.6 * s;
+   582→    dummy.updateMatrix();
+   583→    fol2.setMatrixAt(placed, dummy.matrix);
+   584→    colliders.push(aabbFromCenter(x, z, 0.7, 0.7));
+   585→    placed++;
+   586→  }
+   587→  trunkMesh.instanceMatrix.needsUpdate = true;
+   588→  fol1.instanceMatrix.needsUpdate = true;
+   589→  fol2.instanceMatrix.needsUpdate = true;
+   590→  root.add(trunkMesh, fol1, fol2);
+   591→
+   592→  // dead tree in cemetery
+   593→  const deadTrunk = boxMesh(0.5, 5, 0.5, matBark, -33, 2.5, -33, 0.2);
+   594→  deadTrunk.castShadow = shadows;
+   595→  root.add(deadTrunk);
+   596→  boxMesh(0.2, 2.4, 0.2, matBark, -32, 5.6, -33, 0.7, root);
+   597→  boxMesh(0.2, 2.0, 0.2, matBark, -34, 5.2, -33.2, -0.6, root);
+   598→  addCollider(aabbFromCenter(-33, -33, 0.8, 0.8));
+   599→
+   600→  // boundary walls (invisible)
+   601→  const B = 62;
+   602→  addCollider({ minX: -B - 6, maxX: -B, minZ: -B - 6, maxZ: B + 6 });
+   603→  addCollider({ minX: B, maxX: B + 6, minZ: -B - 6, maxZ: B + 6 });
+   604→  addCollider({ minX: -B - 6, maxX: B + 6, minZ: -B - 6, maxZ: -B });
+   605→  addCollider({ minX: -B - 6, maxX: B + 6, minZ: B, maxZ: B + 6 });
+   606→
+   607→  return {
+   608→    root, colliders, occluders, interactables, lamps, braziers, doors, gatePivot,
+   609→    stars, moonMesh, groundMesh: ground, wellBucket, wellRope,
+   610→  };
+   611→}
+   612→

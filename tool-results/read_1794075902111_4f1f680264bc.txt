@@ -1,0 +1,627 @@
+     1→// HOLLOW VALE — quests: main chapters, side quests, notes, pickups, world interactions
+     2→import * as THREE from 'three';
+     3→import { getTexture, mulberry32 } from './core';
+     4→import { WorldRefs, type Interactable } from './world';
+     5→import type { Player } from './player';
+     6→
+     7→export interface QuestHooks {
+     8→  message: (text: string, big?: boolean) => void;
+     9→  subtitle: (text: string, dur?: number) => void;
+    10→  onNoise: (pos: THREE.Vector3, radius: number) => void;
+    11→  onStage: (stage: number) => void;
+    12→  onNoteRead: (note: NoteDef) => void;
+    13→  onPickup: (id: string, type: string) => void;
+    14→  netEmit: (event: string, data: Record<string, unknown>) => void;
+    15→  isNet: () => boolean;
+    16→}
+    17→
+    18→export interface NoteDef { id: string; title: string; text: string; num: number }
+    19→
+    20→export const NOTES: NoteDef[] = [
+    21→  { id: 'note_priest', num: 1, title: "The Priest's Last Letter", text: "They came at dusk... the bell rang backwards...\n\nWe sealed the church, but the Shepherd knows hymns. Do not light three flames unless you are ready to know what sleeps in the well.\n\nWhoever reads this: the key to my church lies in the old barn, under the hay, where we hid from him.\n\n— Father Abeln" },
+    22→  { id: 'note_miller', num: 2, title: "Torn Page — Miller's Diary", text: "My wife walks the fields at night. She doesn't answer to her name anymore.\n\nThe doctor gives me pills that don't help. Last night I heard her humming OUR song under the window.\n\nI will not open the curtains. I will not open the curtains. I will not" },
+    23→  { id: 'note_clinic', num: 3, title: "Patient Log — Final Entry", text: "The tincture only delays it. They hear the bell in their sleep.\n\nIf you read this: nightshade, three sprigs, steeped slow at the mortar. It steadies the hands.\n\nIt does not steady the soul.\n\n— Dr. H." },
+    24→  { id: 'note_barn', num: 4, title: "Scratched Plank — Barn", text: "The rifle is split for safety. Stock here in the barn. Barrel at the hunter's cabin, north-east past the fields.\n\nA steady hand can put it back at the workshop bench.\n\nBullets don't kill him. Nothing kills him. But he KNEELS.\n\n— old man Grothe" },
+    25→  { id: 'note_farm', num: 5, title: "Recipe Card — Farmhouse", text: "Sleeping tea: valerian, honey, and a prayer you don't believe in.\n\nThe children must not see the lantern pass the window.\n\nIf the lantern STOPS outside — put out the fire, and get under the floor." },
+    26→  { id: 'note_annex', num: 6, title: "Charred Hymnal — Chapel Annex", text: "Brother Tomas scratched this before they took him:\n\nTHE FLAMES FEED IT. Three braziers, three calls. Light them and the well will give up what it swallowed.\n\nGod forgive us for what we buried with the bell." },
+    27→  { id: 'note_hunter', num: 7, title: "Hunter's Warning", text: "Shot it twice at the treeline. It knelt. Then it stood. Then it was INSIDE my house.\n\nLeft the barrel in the rack. Moving to the chapel.\n\nThe gate key comes with the amulet — after the altar takes it back. Don't wear the thing. It whispers." },
+    28→  { id: 'note_cemetery', num: 8, title: "Grave Marker — Unmarked Row", text: "Here lies the Shepherd of Hollow Vale, keeper of the bell, drowned in the well by his own flock.\n\nWe were starving. He promised a harvest. He kept his promise.\n\nDo not let it ring again.\n\n— the survivors of '43" },
+    29→];
+    30→
+    31→interface PickupDef {
+    32→  id: string; type: string; pos: THREE.Vector3; label: string;
+    33→}
+    34→const P = (id: string, type: string, x: number, y: number, z: number, label: string): PickupDef => ({ id, type, pos: new THREE.Vector3(x, y, z), label });
+    35→
+    36→export const PICKUPS: PickupDef[] = [
+    37→  P('pk_church_key', 'church_key', 28, 0.5, -4.5, 'Church Key'),
+    38→  P('pk_ammo_1', 'ammo_pistol', -19, 0.8, 10.5, 'Revolver Ammo'),
+    39→  P('pk_bandage_1', 'bandage', -27, 0.9, 10, 'Bandage'),
+    40→  P('pk_ammo_2', 'ammo_pistol', 23, 0.8, 16.5, 'Revolver Ammo'),
+    41→  P('pk_battery_1', 'battery', 8, 0.4, 8.5, 'Battery'),
+    42→  P('pk_pills_1', 'pills', -28.5, 0.8, 11.5, 'Sedative Pills'),
+    43→  P('pk_battery_2', 'battery', 18.5, 0.4, -29, 'Battery'),
+    44→  P('pk_ammo_3', 'ammo_pistol', 3, 1.0, -32.5, 'Revolver Ammo'),
+    45→  P('pk_bandage_2', 'bandage', 44.5, 0.8, -31, 'Bandage'),
+    46→  P('pk_grenade_1', 'grenade', -5, 0.9, 29, 'Noise Grenade'),
+    47→  P('pk_ammo_4', 'ammo_pistol', 27.5, 1.1, -9.5, 'Revolver Ammo'),
+    48→  P('pk_battery_3', 'battery', -40, 0.6, 19, 'Battery'),
+    49→  P('pk_grenade_2', 'grenade', 21, 0.8, 19.5, 'Noise Grenade'),
+    50→  P('pk_ammo_5', 'ammo_pistol', -6.5, 0.9, -30, 'Revolver Ammo'),
+    51→  P('pk_pills_2', 'pills', -33, 0.9, -43, 'Sedative Pills'),
+    52→  P('pk_bandage_3', 'bandage', 29, 0.5, -6.5, 'Bandage'),
+    53→  P('pk_grenade_3', 'grenade', -44, 0.7, -34, 'Noise Grenade'),
+    54→  P('pk_battery_4', 'battery', 30, 0.5, 24, 'Battery'),
+    55→  P('pk_ammo_rifle_1', 'ammo_rifle', 43, 0.8, -28.5, 'Rifle Rounds'),
+    56→  P('pk_pills_3', 'pills', 0, 1.1, -35, 'Sedative Pills'),
+    57→  // side quest items
+    58→  P('pk_stock', 'rifle_stock', 29.5, 0.5, -10.5, 'Rifle Stock'),
+    59→  P('pk_barrel', 'rifle_barrel', 46.5, 0.9, -29.5, 'Rifle Barrel'),
+    60→  P('pk_herb_1', 'herb', -39, 0.6, 21, 'Nightshade Sprig'),
+    61→  P('pk_herb_2', 'herb', -35, 0.5, -38, 'Nightshade Sprig'),
+    62→  P('pk_herb_3', 'herb', 50, 0.5, 6, 'Nightshade Sprig'),
+    63→  // notes
+    64→  P('nt_priest', 'note_priest', 0, 1.15, -34.2, 'Read the letter'),
+    65→  P('nt_miller', 'note_miller', -22, 0.85, 12.5, 'Read the page'),
+    66→  P('nt_clinic', 'note_clinic', -25.2, 0.9, 8.4, 'Read the log'),
+    67→  P('nt_barn', 'note_barn', 26.5, 0.5, -11, 'Read the plank'),
+    68→  P('nt_farm', 'note_farm', 23.5, 0.85, 19.5, 'Read the card'),
+    69→  P('nt_annex', 'note_annex', 18, 1.1, -30.4, 'Read the hymnal'),
+    70→  P('nt_hunter', 'note_hunter', 43, 0.9, -29.8, "Read the warning"),
+    71→  P('nt_cemetery', 'note_cemetery', -36.5, 0.7, -40, 'Read the marker'),
+    72→  // key items
+    73→  P('pk_iron_key', 'iron_key', -33, 1.0, -38.8, 'Iron Key'),
+    74→  P('pk_amulet', 'amulet', 0, 1.35, 2, 'Drowned Amulet'),
+    75→];
+    76→const START_HIDDEN = new Set(['pk_iron_key', 'pk_amulet']);
+    77→
+    78→const PICKUP_COLORS: Record<string, number> = {
+    79→  ammo_pistol: 0xb08a3e, ammo_rifle: 0x8a6a2e, bandage: 0xd8d2c4, pills: 0x9fd0c0,
+    80→  battery: 0x7fa8d8, grenade: 0xc46a3a, herb: 0x5a8a3a, church_key: 0xd8c46a,
+    81→  iron_key: 0xc8b45a, amulet: 0x8a5adf, rifle_stock: 0x6a4a2a, rifle_barrel: 0x8a8f94,
+    82→  note_priest: 0xcfc7ab, note_miller: 0xcfc7ab, note_clinic: 0xcfc7ab, note_barn: 0xcfc7ab,
+    83→  note_farm: 0xcfc7ab, note_annex: 0xcfc7ab, note_hunter: 0xcfc7ab, note_cemetery: 0xcfc7ab,
+    84→};
+    85→const NOTE_IDS = new Set(['note_priest', 'note_miller', 'note_clinic', 'note_barn', 'note_farm', 'note_annex', 'note_hunter', 'note_cemetery']);
+    86→
+    87→export interface QuestState {
+    88→  stage: number;
+    89→  braziersLit: string[];
+    90→  picked: string[];
+    91→  notesRead: string[];
+    92→  rifleCrafted: boolean;
+    93→  doctorDone: boolean;
+    94→  whisperReward: boolean;
+    95→  gateOpen: boolean;
+    96→  shepherdActive: boolean;
+    97→}
+    98→
+    99→export class Quests {
+   100→  state: QuestState = {
+   101→    stage: 0, braziersLit: [], picked: [], notesRead: [], rifleCrafted: false,
+   102→    doctorDone: false, whisperReward: false, gateOpen: false, shepherdActive: false,
+   103→  };
+   104→  world: WorldRefs;
+   105→  hooks: QuestHooks;
+   106→  private pickupMeshes = new Map<string, THREE.Group>();
+   107→  private rnd = mulberry32(555);
+   108→  private amuletSpawned = false;
+   109→  private wellAnimating = 0;
+   110→
+   111→  constructor(world: WorldRefs, hooks: QuestHooks) {
+   112→    this.world = world;
+   113→    this.hooks = hooks;
+   114→    this.buildPickups();
+   115→    this.wireWorld();
+   116→  }
+   117→
+   118→  /* ---------- pickups ---------- */
+   119→  private buildPickups() {
+   120→    const paperMat = new THREE.MeshStandardMaterial({ map: getTexture('paper'), roughness: 0.9 });
+   121→    for (const p of PICKUPS) {
+   122→      const g = new THREE.Group();
+   123→      if (NOTE_IDS.has(p.type)) {
+   124→        const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.4), paperMat);
+   125→        g.add(m);
+   126→      } else if (p.type === 'church_key' || p.type === 'iron_key') {
+   127→        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], metalness: 0.6, roughness: 0.4 });
+   128→        const shank = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.26), mat);
+   129→        shank.position.z = 0.06;
+   130→        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 6, 12), mat);
+   131→        ring.position.z = -0.1;
+   132→        const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.05), mat);
+   133→        teeth.position.set(0, -0.05, 0.16);
+   134→        g.add(shank, ring, teeth);
+   135→      } else if (p.type === 'amulet') {
+   136→        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], metalness: 0.7, roughness: 0.3, emissive: 0x3a1a6a, emissiveIntensity: 0.6 });
+   137→        g.add(new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.03, 8, 16), mat));
+   138→        const gem = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshStandardMaterial({ color: 0x1a0a2a, emissive: 0x6a2aff, emissiveIntensity: 1 }));
+   139→        gem.position.z = 0.09;
+   140→        g.add(gem);
+   141→      } else if (p.type === 'herb') {
+   142→        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], roughness: 1 });
+   143→        for (let i = 0; i < 3; i++) {
+   144→          const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.18, 5), mat);
+   145→          leaf.position.set((this.rnd() - 0.5) * 0.12, 0.09, (this.rnd() - 0.5) * 0.12);
+   146→          leaf.rotation.z = (this.rnd() - 0.5) * 0.8;
+   147→          g.add(leaf);
+   148→        }
+   149→      } else {
+   150→        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type] || 0xaaaaaa, roughness: 0.6, metalness: p.type.startsWith('ammo') ? 0.4 : 0.1 });
+   151→        const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.16), mat);
+   152→        g.add(m);
+   153→        if (p.type.startsWith('ammo')) {
+   154→          for (let i = 0; i < 3; i++) {
+   155→            const bullet = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.09, 6), new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.7, roughness: 0.35 }));
+   156→            bullet.position.set(-0.06 + i * 0.06, 0.12, 0);
+   157→            g.add(bullet);
+   158→          }
+   159→        }
+   160→      }
+   161→      g.position.copy(p.pos);
+   162→      g.visible = !START_HIDDEN.has(p.id);
+   163→      this.world.root.add(g);
+   164→      this.pickupMeshes.set(p.id, g);
+   165→      const entry: Interactable = {
+   166→        id: p.id, pos: p.pos.clone(), radius: 2.1, prompt: NOTE_IDS.has(p.type) ? p.label : 'Take ' + p.label,
+   167→        enabled: !START_HIDDEN.has(p.id), once: true, highlight: g,
+   168→        onInteract: () => this.takePickup(p.id),
+   169→      };
+   170→      this.world.interactables.push(entry);
+   171→      if (START_HIDDEN.has(p.id)) entry.used = true;
+   172→    }
+   173→  }
+   174→
+   175→  private takePickup(id: string) {
+   176→    const def = PICKUPS.find(p => p.id === id);
+   177→    if (!def || this.state.picked.includes(id)) return;
+   178→    this.state.picked.push(id);
+   179→    const mesh = this.pickupMeshes.get(id);
+   180→    if (mesh) mesh.visible = false;
+   181→    this.disableInteractable(id);
+   182→    if (NOTE_IDS.has(def.type)) {
+   183→      const note = NOTES.find(n => n.id === def.type);
+   184→      if (note) {
+   185→        if (!this.state.notesRead.includes(def.type)) this.state.notesRead.push(def.type);
+   186→        this.hooks.onNoteRead(note);
+   187→        this.checkWhispers();
+   188→        this.checkPriestNote(def.type);
+   189→      }
+   190→      this.hooks.onPickup(id, def.type);
+   191→      return;
+   192→    }
+   193→    this.hooks.onPickup(id, def.type);
+   194→    switch (def.type) {
+   195→      case 'church_key':
+   196→        this.hooks.message('Church Key acquired', true);
+   197→        this.setStage(1);
+   198→        break;
+   199→      case 'iron_key':
+   200→        this.hooks.message('Iron Key acquired', true);
+   201→        this.setStage(5);
+   202→        break;
+   203→      case 'amulet':
+   204→        this.hooks.message('The Drowned Amulet', true);
+   205→        this.setStage(4);
+   206→        break;
+   207→      case 'rifle_stock': this.hooks.message('Rifle Stock acquired'); break;
+   208→      case 'rifle_barrel': this.hooks.message('Rifle Barrel acquired'); break;
+   209→      case 'herb': {
+   210→        const count = ['pk_herb_1', 'pk_herb_2', 'pk_herb_3'].filter(h => this.state.picked.includes(h)).length;
+   211→        this.hooks.message(`Nightshade (${count}/3)`);
+   212→        break;
+   213→      }
+   214→      default: break;
+   215→    }
+   216→  }
+   217→
+   218→  private checkPriestNote(noteId: string) {
+   219→    if (noteId === 'note_priest' && this.state.stage === 1) {
+   220→      this.setStage(2);
+   221→      this.hooks.subtitle('Three flames. Three calls. The braziers wait in the houses.', 6);
+   222→    }
+   223→  }
+   224→
+   225→  private checkWhispers() {
+   226→    if (this.state.whisperReward) return;
+   227→    if (this.state.notesRead.length >= NOTES.length) {
+   228→      this.state.whisperReward = true;
+   229→      this.hooks.message('All whispers collected: Revolver Ammo +6, Pills +2', true);
+   230→      this.hooks.subtitle('The last page reveals the gate-ward sigil. The village finally rests.', 6);
+   231→      this.hooks.netEmit('give', { items: { ammo_pistol: 6, pills: 2 } });
+   232→    }
+   233→  }
+   234→
+   235→  /* ---------- world interactions ---------- */
+   236→  private wireWorld() {
+   237→    const byId = new Map<string, (typeof this.world.interactables)[number]>();
+   238→    for (const it of this.world.interactables) byId.set(it.id, it);
+   239→
+   240→    // doors
+   241→    for (const [id, door] of this.world.doors) {
+   242→      const it = byId.get('door_' + id);
+   243→      if (it) {
+   244→        it.prompt = door.locked ? 'Locked — needs a key' : 'Open door';
+   245→        it.onInteract = () => this.useDoor(id);
+   246→      }
+   247→    }
+   248→
+   249→    // braziers
+   250→    for (const b of this.world.braziers) {
+   251→      const it = byId.get(b.id);
+   252→      if (it) it.onInteract = () => this.lightBrazier(b.id);
+   253→    }
+   254→
+   255→    // well
+   256→    const well = byId.get('well_crank');
+   257→    if (well) well.onInteract = () => this.useWell();
+   258→
+   259→    // cemetery altar
+   260→    const altar = byId.get('cemetery_altar');
+   261→    if (altar) altar.onInteract = () => this.useAltar();
+   262→
+   263→    // gate
+   264→    const gate = byId.get('forest_gate');
+   265→    if (gate) gate.onInteract = () => this.useGate();
+   266→
+   267→    // stations: workbench + mortar
+   268→    this.world.interactables.push({
+   269→      id: 'workbench', pos: new THREE.Vector3(-4, 0.9, 28.4), radius: 2.6, prompt: 'Use workbench', enabled: true,
+   270→      onInteract: () => this.useWorkbench(),
+   271→    });
+   272→    this.world.interactables.push({
+   273→      id: 'mortar', pos: new THREE.Vector3(-25.2, 0.9, 8), radius: 2.6, prompt: 'Use mortar', enabled: true,
+   274→      onInteract: () => this.useMortar(),
+   275→    });
+   276→  }
+   277→
+   278→  useDoor(id: string) {
+   279→    const door = this.world.doors.get(id);
+   280→    if (!door) return;
+   281→    if (door.locked) {
+   282→      if (id === 'church') {
+   283→        if ((this.localPlayerRef?.inv.church_key || 0) > 0) {
+   284→          door.locked = false;
+   285→          this.hooks.message('Unlocked the church', true);
+   286→          this.openDoor(id);
+   287→        } else {
+   288→          this.hooks.subtitle('Locked. The keyhole is cold iron. The key is somewhere in the barn.', 4);
+   289→        }
+   290→      }
+   291→      return;
+   292→    }
+   293→    if (door.open) { this.closeDoor(id); } else { this.openDoor(id); }
+   294→  }
+   295→
+   296→  localPlayerRef: Player | null = null;
+   297→
+   298→  openDoor(id: string) {
+   299→    const door = this.world.doors.get(id);
+   300→    if (!door || door.open) return;
+   301→    door.open = true;
+   302→    door.pivot.rotation.y = -Math.PI * 0.55;
+   303→    const ci = this.world.colliders.indexOf(door.collider);
+   304→    if (ci >= 0) this.world.colliders.splice(ci, 1);
+   305→    this.hooks.onNoise(door.pivot.position, 11);
+   306→    this.hooks.netEmit('door', { id, open: true });
+   307→  }
+   308→  closeDoor(id: string) {
+   309→    const door = this.world.doors.get(id);
+   310→    if (!door || !door.open) return;
+   311→    door.open = false;
+   312→    door.pivot.rotation.y = 0;
+   313→    this.world.colliders.push(door.collider);
+   314→    this.hooks.onNoise(door.pivot.position, 9);
+   315→    this.hooks.netEmit('door', { id, open: false });
+   316→  }
+   317→
+   318→  lightBrazier(id: string) {
+   319→    const b = this.world.braziers.find(x => x.id === id);
+   320→    if (!b || b.lit) return;
+   321→    if (this.state.stage < 2) {
+   322→      this.hooks.subtitle('The coals are dead. Something must call the flame first.', 4);
+   323→      return;
+   324→    }
+   325→    b.lit = true;
+   326→    this.state.braziersLit.push(id);
+   327→    const light = new THREE.PointLight(0xff7a1a, 16, 14, 1.6);
+   328→    light.position.copy(b.pos3).add(new THREE.Vector3(0, 0.6, 0));
+   329→    this.world.root.add(light);
+   330→    b.light = light;
+   331→    b.flame!.material = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
+   332→    b.flame!.scale.setScalar(1.4);
+   333→    this.hooks.onNoise(b.pos3, 34);
+   334→    this.hooks.netEmit('brazier', { id });
+   335→    this.hooks.message(`Brazier lit (${this.state.braziersLit.length}/3)`, true);
+   336→    if (this.state.braziersLit.length >= 3 && this.state.stage === 2) {
+   337→      this.setStage(3);
+   338→      this.hooks.subtitle('A bell tolls far away. The well is calling something up.', 6);
+   339→    }
+   340→  }
+   341→
+   342→  useWell() {
+   343→    if (this.wellAnimating > 0) return;
+   344→    if (this.state.stage < 3) {
+   345→      this.hooks.subtitle('The rope is frozen in the crank. Nothing answers your pull.', 4);
+   346→      return;
+   347→    }
+   348→    if (this.amuletSpawned) {
+   349→      this.hooks.subtitle('The well is quiet now. What it held is already in your hands.', 4);
+   350→      return;
+   351→    }
+   352→    this.wellAnimating = 3;
+   353→    this.hooks.subtitle('The crank groans... the rope strains... something heavy rises.', 5);
+   354→    this.hooks.onNoise(this.world.wellBucket ? this.world.wellBucket.position : new THREE.Vector3(0, 0, 2), 42);
+   355→    this.hooks.netEmit('well', {});
+   356→    const t0 = performance.now();
+   357→    const anim = () => {
+   358→      const t = (performance.now() - t0) / 1000;
+   359→      if (this.world.wellBucket && this.world.wellRope) {
+   360→        const phase = t / 2.4;
+   361→        const y = phase < 0.55 ? 0.5 - phase * 2.6 : 0.5 - (1.1 - phase * 2.0) * 2.6 + (phase - 0.55) * 5.2;
+   362→        this.world.wellBucket.position.y = Math.max(0.45, Math.min(y, 1.8));
+   363→        this.world.wellRope.scale.y = clamp(1 - this.world.wellBucket.position.y * 0.45, 0.15, 1);
+   364→        this.world.wellRope.position.y = 1.4 + (2.0 - 2.0 * this.world.wellRope.scale.y) / 2;
+   365→      }
+   366→      if (t < 2.6) requestAnimationFrame(anim);
+   367→      else {
+   368→        if (!this.state.picked.includes('pk_amulet')) {
+   369→          const mesh = this.pickupMeshes.get('pk_amulet');
+   370→          if (mesh) mesh.visible = true;
+   371→          this.enableInteractable('pk_amulet');
+   372→          this.hooks.subtitle('The amulet gleams at the lip of the well.', 5);
+   373→        }
+   374→      }
+   375→    };
+   376→    requestAnimationFrame(anim);
+   377→  }
+   378→
+   379→  useAltar() {
+   380→    if (this.state.stage < 4) {
+   381→      this.hooks.subtitle('The altar is cold stone. It wants what drowned.', 4);
+   382→      return;
+   383→    }
+   384→    if (!this.state.picked.includes('pk_amulet') && !this.localPlayerRef?.inv.amulet) {
+   385→      this.hooks.subtitle('You need the amulet.', 3);
+   386→      return;
+   387→    }
+   388→    if (this.localPlayerRef) this.localPlayerRef.inv.amulet = 0;
+   389→    if (!this.state.picked.includes('pk_iron_key')) {
+   390→      const altarIt = this.world.interactables.find(i => i.id === 'cemetery_altar');
+   391→      if (altarIt) { altarIt.used = true; altarIt.enabled = false; }
+   392→      this.enableInteractable('pk_iron_key');
+   393→      const mesh = this.pickupMeshes.get('pk_iron_key');
+   394→      if (mesh) mesh.visible = true;
+   395→      this.hooks.subtitle('The amulet sinks into the stone. An iron key rises from the grave dirt.', 6);
+   396→      this.hooks.onNoise(new THREE.Vector3(-33, 1, -41), 46);
+   397→      this.hooks.netEmit('altar', {});
+   398→    } else {
+   399→      this.hooks.subtitle('The stone is still warm.', 3);
+   400→    }
+   401→  }
+   402→
+   403→  useGate() {
+   404→    if (this.state.gateOpen) return;
+   405→    if (this.state.stage < 5 || !(this.localPlayerRef && this.localPlayerRef.inv.iron_key > 0)) {
+   406→      this.hooks.subtitle('Locked. A sigil of three flames is carved above the keyhole.', 4);
+   407→      return;
+   408→    }
+   409→    this.state.gateOpen = true;
+   410→    this.setStage(6);
+   411→    if (this.world.gatePivot) this.world.gatePivot.rotation.y = -Math.PI * 0.5;
+   412→    const gateCollider = this.world.colliders.find(c => c.minX > -3 && c.maxX < 3 && c.minZ > 54 && c.maxZ < 56);
+   413→    if (gateCollider) {
+   414→      const ci = this.world.colliders.indexOf(gateCollider);
+   415→      if (ci >= 0) this.world.colliders.splice(ci, 1);
+   416→    }
+   417→    this.hooks.message('The gate is open — RUN.', true);
+   418→    this.hooks.onNoise(new THREE.Vector3(0, 1, 55), 40);
+   419→    this.hooks.netEmit('gate', {});
+   420→  }
+   421→
+   422→  useWorkbench() {
+   423→    if (this.state.rifleCrafted) {
+   424→      this.hooks.subtitle('The bench is picked clean.', 3);
+   425→      return;
+   426→    }
+   427→    const hasStock = this.state.picked.includes('pk_stock');
+   428→    const hasBarrel = this.state.picked.includes('pk_barrel');
+   429→    if (hasStock && hasBarrel) {
+   430→      this.state.rifleCrafted = true;
+   431→      this.hooks.netEmit('craft', { what: 'rifle' });
+   432→      this.hooks.message("Hunter's Rifle crafted", true);
+   433→      this.hooks.subtitle('The old rifle clicks together. Heavy. Hungry.', 5);
+   434→      this.hooks.onNoise(new THREE.Vector3(-4, 1, 28.4), 22);
+   435→    } else {
+   436→      this.hooks.subtitle(`Missing parts. Stock ${hasStock ? '✓' : '✗'} — Barrel ${hasBarrel ? '✓' : '✗'}`, 4);
+   437→    }
+   438→  }
+   439→
+   440→  useMortar() {
+   441→    if (this.state.doctorDone) {
+   442→      this.hooks.subtitle('The mortar smells of bitter leaves.', 3);
+   443→      return;
+   444→    }
+   445→    const herbs = ['pk_herb_1', 'pk_herb_2', 'pk_herb_3'].filter(h => this.state.picked.includes(h)).length;
+   446→    if (herbs >= 3) {
+   447→      this.state.doctorDone = true;
+   448→      this.hooks.netEmit('craft', { what: 'remedy' });
+   449→      this.hooks.message("Doctor's Remedy: Pills +3, Bandages +2", true);
+   450→      this.hooks.subtitle('The tincture settles your hands. For now.', 5);
+   451→      this.hooks.netEmit('give', { items: { pills: 3, bandage: 2 } });
+   452→    } else {
+   453→      this.hooks.subtitle(`Nightshade sprigs: ${herbs}/3. Greenhouse, cemetery, forest edge.`, 4);
+   454→    }
+   455→  }
+   456→
+   457→  /* ---------- helpers ---------- */
+   458→  private disableInteractable(id: string) {
+   459→    const it = this.world.interactables.find(i => i.id === id);
+   460→    if (it) { it.enabled = false; it.used = true; }
+   461→  }
+   462→  private enableInteractable(id: string) {
+   463→    const it = this.world.interactables.find(i => i.id === id);
+   464→    if (it) { it.enabled = true; it.used = false; }
+   465→  }
+   466→
+   467→  setStage(n: number) {
+   468→    if (n <= this.state.stage) return;
+   469→    this.state.stage = n;
+   470→    this.hooks.onStage(n);
+   471→    this.hooks.netEmit('stage', { stage: n });
+   472→  }
+   473→
+   474→  applyRemote(event: string, data: Record<string, unknown>) {
+   475→    switch (event) {
+   476→      case 'pickup': {
+   477→        const id = data.id as string;
+   478→        if (!this.state.picked.includes(id)) {
+   479→          this.state.picked.push(id);
+   480→          const mesh = this.pickupMeshes.get(id);
+   481→          if (mesh) mesh.visible = false;
+   482→          this.disableInteractable(id);
+   483→          const def = PICKUPS.find(p => p.id === id);
+   484→          if (def && NOTE_IDS.has(def.type) && !this.state.notesRead.includes(def.type)) this.state.notesRead.push(def.type);
+   485→        }
+   486→        break;
+   487→      }
+   488→      case 'door': {
+   489→        const door = this.world.doors.get(data.id as string);
+   490→        if (door) {
+   491→          door.open = data.open as boolean;
+   492→          door.pivot.rotation.y = door.open ? -Math.PI * 0.55 : 0;
+   493→          const ci = this.world.colliders.indexOf(door.collider);
+   494→          if (door.open && ci >= 0) this.world.colliders.splice(ci, 1);
+   495→          if (!door.open && ci < 0) this.world.colliders.push(door.collider);
+   496→        }
+   497→        break;
+   498→      }
+   499→      case 'brazier': {
+   500→        const b = this.world.braziers.find(x => x.id === data.id);
+   501→        if (b && !b.lit) {
+   502→          b.lit = true;
+   503→          if (!this.state.braziersLit.includes(b.id)) this.state.braziersLit.push(b.id);
+   504→          const light = new THREE.PointLight(0xff7a1a, 16, 14, 1.6);
+   505→          light.position.copy(b.pos3).add(new THREE.Vector3(0, 0.6, 0));
+   506→          this.world.root.add(light);
+   507→          b.light = light;
+   508→          if (b.flame) {
+   509→            b.flame.material = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
+   510→            b.flame.scale.setScalar(1.4);
+   511→          }
+   512→        }
+   513→        break;
+   514→      }
+   515→      case 'stage': this.state.stage = Math.max(this.state.stage, data.stage as number); break;
+   516→      case 'well': {
+   517→        if (!this.state.picked.includes('pk_amulet') && !this.amuletSpawned) {
+   518→          this.amuletSpawned = true;
+   519→          const mesh = this.pickupMeshes.get('pk_amulet');
+   520→          if (mesh) mesh.visible = true;
+   521→          this.enableInteractable('pk_amulet');
+   522→        }
+   523→        break;
+   524→      }
+   525→      case 'altar': {
+   526→        if (!this.state.picked.includes('pk_iron_key')) {
+   527→          const mesh = this.pickupMeshes.get('pk_iron_key');
+   528→          if (mesh) mesh.visible = true;
+   529→          this.enableInteractable('pk_iron_key');
+   530→        }
+   531→        break;
+   532→      }
+   533→      case 'gate': {
+   534→        this.state.gateOpen = true;
+   535→        if (this.world.gatePivot) this.world.gatePivot.rotation.y = -Math.PI * 0.5;
+   536→        const gc = this.world.colliders.find(c => c.minX > -3 && c.maxX < 3 && c.minZ > 54 && c.maxZ < 56);
+   537→        if (gc) { const i = this.world.colliders.indexOf(gc); if (i >= 0) this.world.colliders.splice(i, 1); }
+   538→        break;
+   539→      }
+   540→      case 'craft': {
+   541→        if (data.what === 'rifle') this.state.rifleCrafted = true;
+   542→        if (data.what === 'remedy') this.state.doctorDone = true;
+   543→        break;
+   544→      }
+   545→    }
+   546→  }
+   547→
+   548→  giveToPlayer(player: Player, items: Record<string, number>) {
+   549→    for (const [k, v] of Object.entries(items)) {
+   550→      if (k === 'ammo_pistol' || k === 'ammo_rifle') player.inv[k] = (player.inv[k] || 0) + v;
+   551→      else player.inv[k] = (player.inv[k] || 0) + v;
+   552→    }
+   553→  }
+   554→
+   555→  update(dt: number) {
+   556→    // pickup bobbing
+   557→    for (const [id, g] of this.pickupMeshes) {
+   558→      if (!g.visible) continue;
+   559→      g.rotation.y += dt * 1.4;
+   560→      g.position.y = PICKUPS.find(p => p.id === id)!.pos.y + Math.sin(performance.now() * 0.002 + g.position.x) * 0.06;
+   561→    }
+   562→    // brazier flames flicker
+   563→    for (const b of this.world.braziers) {
+   564→      if (b.lit && b.light) b.light.intensity = 14 + Math.sin(performance.now() * 0.011 + b.pos3.x) * 3.5;
+   565→      if (b.lit && b.flame) b.flame.scale.y = 1.3 + Math.sin(performance.now() * 0.013 + b.pos3.z) * 0.25;
+   566→    }
+   567→  }
+   568→
+   569→  objectiveText(): { main: string; sides: string[] } {
+   570→    const s = this.state.stage;
+   571→    const mains = [
+   572→      'Find the church key in the old barn (east)',
+   573→      'Unlock the church and read the priest\u2019s letter',
+   574→      `Light the three braziers (${this.state.braziersLit.length}/3) — Miller\u2019s, Farmhouse, Annex`,
+   575→      'Crank the well and take what rises',
+   576→      'Place the amulet on the cemetery altar (north-west)',
+   577→      'Open the forest gate (south) and escape',
+   578→      'Escape through the forest gate',
+   579→    ];
+   580→    const sides: string[] = [];
+   581→    if (!this.state.rifleCrafted) {
+   582→      const st = this.state.picked.includes('pk_stock') ? 1 : 0;
+   583→      const br = this.state.picked.includes('pk_barrel') ? 1 : 0;
+   584→      sides.push(`The Hunter\u2019s Rifle: stock ${st}/1, barrel ${br}/1 \u2192 workbench`);
+   585→    }
+   586→    if (!this.state.doctorDone) {
+   587→      const h = ['pk_herb_1', 'pk_herb_2', 'pk_herb_3'].filter(x => this.state.picked.includes(x)).length;
+   588→      sides.push(`Doctor\u2019s Remedy: nightshade ${h}/3 \u2192 clinic mortar`);
+   589→    }
+   590→    if (!this.state.whisperReward) sides.push(`Whispers of the Dead: notes ${this.state.notesRead.length}/8`);
+   591→    return { main: mains[Math.min(s, mains.length - 1)], sides };
+   592→  }
+   593→
+   594→  serialize(): QuestState { return { ...this.state }; }
+   595→  restore(s: Partial<QuestState>) {
+   596→    Object.assign(this.state, s);
+   597→    // re-apply picked items
+   598→    for (const id of this.state.picked) {
+   599→      const mesh = this.pickupMeshes.get(id);
+   600→      if (mesh) mesh.visible = false;
+   601→      this.disableInteractable(id);
+   602→    }
+   603→    for (const id of this.state.braziersLit) {
+   604→      const b = this.world.braziers.find(x => x.id === id);
+   605→      if (b && !b.lit) {
+   606→        b.lit = true;
+   607→        const light = new THREE.PointLight(0xff7a1a, 16, 14, 1.6);
+   608→        light.position.copy(b.pos3).add(new THREE.Vector3(0, 0.6, 0));
+   609→        this.world.root.add(light);
+   610→        b.light = light;
+   611→        if (b.flame) {
+   612→          b.flame.material = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
+   613→          b.flame.scale.setScalar(1.4);
+   614→        }
+   615→      }
+   616→    }
+   617→    if (this.state.gateOpen && this.world.gatePivot) this.world.gatePivot.rotation.y = -Math.PI * 0.5;
+   618→    const church = this.world.doors.get('church');
+   619→    if (church) {
+   620→      // stage >= 1 implies key found; church still locked until used
+   621→    }
+   622→    void church;
+   623→  }
+   624→}
+   625→
+   626→function clamp(v: number, a: number, b: number) { return Math.min(b, Math.max(a, v)); }
+   627→

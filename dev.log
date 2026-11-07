@@ -100,3 +100,24 @@ Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allow
  GET / 200 in 29ms (compile: 7ms, render: 22ms)
  GET / 200 in 25ms (compile: 4ms, render: 21ms)
  GET / 200 in 26ms (compile: 6ms, render: 19ms)
+ GET / 200 in 25ms (compile: 6ms, render: 19ms)
+ GET / 200 in 97ms (compile: 50ms, render: 48ms)
+ GET / 200 in 92ms (compile: 49ms, render: 43ms)
+ GET / 200 in 24ms (compile: 5ms, render: 19ms)
+ GET / 200 in 28ms (compile: 6ms, render: 22ms)
+ GET / 200 in 110ms (compile: 63ms, render: 47ms)
+ GET / 200 in 108ms (compile: 58ms, render: 50ms)
+ GET / 200 in 126ms (compile: 77ms, render: 49ms)
+ GET / 200 in 274ms (compile: 3ms, render: 271ms)
+ GET / 200 in 84ms (compile: 6ms, render: 78ms)
+ GET / 200 in 57ms (compile: 6ms, render: 51ms)
+✓ Compiled in 314ms
+✓ Compiled in 183ms
+ GET / 200 in 276ms (compile: 70ms, render: 206ms)
+ GET / 200 in 83ms (compile: 5ms, render: 78ms)
+ GET / 200 in 89ms (compile: 4ms, render: 86ms)
+✓ Compiled in 412ms
+ GET / 200 in 219ms (compile: 106ms, render: 112ms)
+ GET / 200 in 50ms (compile: 8ms, render: 42ms)
+✓ Compiled in 265ms
+ GET / 200 in 393ms (compile: 179ms, render: 213ms)

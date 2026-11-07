@@ -26,6 +26,9 @@ export const NOTES: NoteDef[] = [
   { id: 'note_annex', num: 6, title: "Charred Hymnal — Chapel Annex", text: "Brother Tomas scratched this before they took him:\n\nTHE FLAMES FEED IT. Three braziers, three calls. Light them and the well will give up what it swallowed.\n\nGod forgive us for what we buried with the bell." },
   { id: 'note_hunter', num: 7, title: "Hunter's Warning", text: "Shot it twice at the treeline. It knelt. Then it stood. Then it was INSIDE my house.\n\nLeft the barrel in the rack. Moving to the chapel.\n\nThe gate key comes with the amulet — after the altar takes it back. Don't wear the thing. It whispers." },
   { id: 'note_cemetery', num: 8, title: "Grave Marker — Unmarked Row", text: "Here lies the Shepherd of Hollow Vale, keeper of the bell, drowned in the well by his own flock.\n\nWe were starving. He promised a harvest. He kept his promise.\n\nDo not let it ring again.\n\n— the survivors of '43" },
+  { id: 'note_s1', num: 9, title: 'Letters from the Dead I', text: '...to whoever outlives us: the shed past the farm answers only to its numbers. Seven... three... the rest the ravens took...\n\nWe were going to burn it. We were going to burn all of it.\n\n— A.' },
+  { id: 'note_s2', num: 10, title: 'Letters from the Dead II', text: '...one... nine. Four numbers, two lost. If you are reading this you already know the door I mean. Take what we hid and finish what we could not.\n\n— M.' },
+  { id: 'note_s3', num: 11, title: 'Letters from the Dead III', text: 'The salts bind what the bell unbinds. Three circles of salt at the old stones, after the amulet, before the gate. The village does not want your death. It wants permission to rest.\n\n— the last letter of Father Abeln' },
 ];
 
 interface PickupDef {
@@ -72,6 +75,39 @@ export const PICKUPS: PickupDef[] = [
   // key items
   P('pk_iron_key', 'iron_key', -33, 1.0, -38.8, 'Iron Key'),
   P('pk_amulet', 'amulet', 0, 1.35, 2, 'Drowned Amulet'),
+  // survivor letters (feature 92)
+  P('nt_s1', 'note_s1', 22.5, 0.85, 16.5, 'Read the letter'),
+  P('nt_s2', 'note_s2', -33, 0.8, -36, 'Read the letter'),
+  P('nt_s3', 'note_s3', 18, 1.1, -29.5, 'Read the letter'),
+  // ritual salts (feature 93)
+  P('pk_salt_1', 'salt', -40, 0.6, 21, 'Ritual Salt'),
+  P('pk_salt_2', 'salt', 45, 0.8, -28, 'Ritual Salt'),
+  P('pk_salt_3', 'salt', 3, 0.5, 6, 'Ritual Salt'),
+  // throwables
+  P('pk_bottle_1', 'bottle', 14, 0.4, 30, 'Bottle'),
+  P('pk_bottle_2', 'bottle', -14, 0.4, -6, 'Bottle'),
+  P('pk_bottle_3', 'bottle', 30, 0.4, 12, 'Bottle'),
+  P('pk_bottle_4', 'bottle', -26, 0.4, -18, 'Bottle'),
+  P('pk_brick_1', 'brick', -8, 0.4, 24, 'Brick'),
+  P('pk_brick_2', 'brick', 20, 0.4, -20, 'Brick'),
+  // misc gear
+  P('pk_cloth_1', 'cloth', -27, 0.9, 12.5, 'Cloth'),
+  P('pk_cloth_2', 'cloth', 26, 0.5, -7, 'Cloth'),
+  P('pk_cloth_3', 'cloth', -4, 0.9, 29.5, 'Cloth'),
+  P('pk_splint_1', 'splint', -28, 0.9, 8, 'Splint'),
+  P('pk_battery_lith', 'battery_lith', 44.5, 0.8, -31.5, 'Lithium Cell'),
+  P('pk_battery_nuc', 'battery_nuc', -44, 0.7, -34, 'Experimental Cell'),
+  P('pk_lockpick_1', 'lockpick', 29.5, 0.5, -9, 'Lockpick'),
+  P('pk_camera_1', 'camera', 0, 1.15, -33, 'Antique Camera'),
+  P('pk_radio_1', 'radio', -5, 0.9, 29, 'Hand Radio'),
+  P('pk_candle_1', 'candle', 18.5, 1.0, -29, 'Candle'),
+  P('pk_candle_2', 'candle', -20, 0.85, 10, 'Candle'),
+  P('pk_torch_1', 'torch', -5, 0.9, 30.5, 'Torch'),
+  P('pk_axe_1', 'axe', 28, 0.5, -10, 'Fire Axe'),
+  P('pk_trinket_1', 'trinket', 35.5, 0.6, -9, 'Trinket'),
+  P('pk_trinket_2', 'trinket', -40, 0.7, 19.5, 'Trinket'),
+  P('pk_trinket_3', 'trinket', 8, 0.6, 8.5, 'Trinket'),
+  P('pk_cables_1', 'cables', 2, 0.9, 28, 'Splice Cables'),
 ];
 const START_HIDDEN = new Set(['pk_iron_key', 'pk_amulet']);
 
@@ -81,8 +117,14 @@ const PICKUP_COLORS: Record<string, number> = {
   iron_key: 0xc8b45a, amulet: 0x8a5adf, rifle_stock: 0x6a4a2a, rifle_barrel: 0x8a8f94,
   note_priest: 0xcfc7ab, note_miller: 0xcfc7ab, note_clinic: 0xcfc7ab, note_barn: 0xcfc7ab,
   note_farm: 0xcfc7ab, note_annex: 0xcfc7ab, note_hunter: 0xcfc7ab, note_cemetery: 0xcfc7ab,
+  note_s1: 0xcfc7ab, note_s2: 0xcfc7ab, note_s3: 0xcfc7ab,
+  salt: 0xbfd8c0, bottle: 0x7fa8b8, brick: 0x8a5a42, cloth: 0xd8d2c4, splint: 0xc8b48a,
+  battery_lith: 0x9fd8f0, battery_nuc: 0x8fffa8, lockpick: 0xb8b8c8, camera: 0x8a6a4a,
+  radio: 0x6a5a3a, candle: 0xe8d8a8, torch: 0xc47a3a, axe: 0x9a4a3a, trinket: 0xd8b85a,
+  cables: 0x8a8f94, master_key: 0xd8b85a,
 };
-const NOTE_IDS = new Set(['note_priest', 'note_miller', 'note_clinic', 'note_barn', 'note_farm', 'note_annex', 'note_hunter', 'note_cemetery']);
+const NOTE_IDS = new Set(['note_priest', 'note_miller', 'note_clinic', 'note_barn', 'note_farm', 'note_annex', 'note_hunter', 'note_cemetery', 'note_s1', 'note_s2', 'note_s3']);
+const LETTER_IDS = ['note_s1', 'note_s2', 'note_s3'];
 
 export interface QuestState {
   stage: number;
@@ -94,12 +136,18 @@ export interface QuestState {
   whisperReward: boolean;
   gateOpen: boolean;
   shepherdActive: boolean;
+  lettersFound: string[];
+  shedOpen: boolean;
+  ritualDone: boolean;
+  salts: number;
+  codeKnown: boolean;
 }
 
 export class Quests {
   state: QuestState = {
     stage: 0, braziersLit: [], picked: [], notesRead: [], rifleCrafted: false,
     doctorDone: false, whisperReward: false, gateOpen: false, shepherdActive: false,
+    lettersFound: [], shedOpen: false, ritualDone: false, salts: 0, codeKnown: false,
   };
   world: WorldRefs;
   hooks: QuestHooks;
@@ -111,6 +159,16 @@ export class Quests {
   constructor(world: WorldRefs, hooks: QuestHooks) {
     this.world = world;
     this.hooks = hooks;
+    // Master Key (feature 57): one random spot per run, deterministic from seeded rng
+    if (!PICKUPS.some(p => p.id === 'pk_master_key')) {
+      const spots = [
+        { id: 'well', pos: new THREE.Vector3(0.9, 0.6, 3.2) },
+        { id: 'miller', pos: new THREE.Vector3(-21, 0.85, 14) },
+        { id: 'silo', pos: new THREE.Vector3(35.5, 0.6, -9) },
+      ];
+      const pick = spots[Math.floor(this.rnd() * 3)];
+      PICKUPS.push({ id: 'pk_master_key', type: 'master_key', pos: pick.pos, label: 'Master Key' });
+    }
     this.buildPickups();
     this.wireWorld();
   }
@@ -123,8 +181,8 @@ export class Quests {
       if (NOTE_IDS.has(p.type)) {
         const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.4), paperMat);
         g.add(m);
-      } else if (p.type === 'church_key' || p.type === 'iron_key') {
-        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], metalness: 0.6, roughness: 0.4 });
+      } else if (p.type === 'church_key' || p.type === 'iron_key' || p.type === 'master_key') {
+        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type] || 0xd8b85a, metalness: 0.6, roughness: 0.4 });
         const shank = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.26), mat);
         shank.position.z = 0.06;
         const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 6, 12), mat);
@@ -132,6 +190,7 @@ export class Quests {
         const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.05), mat);
         teeth.position.set(0, -0.05, 0.16);
         g.add(shank, ring, teeth);
+        if (p.type === 'master_key') g.add(new THREE.PointLight(0xd8b85a, 0.7, 2.5));
       } else if (p.type === 'amulet') {
         const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], metalness: 0.7, roughness: 0.3, emissive: 0x3a1a6a, emissiveIntensity: 0.6 });
         g.add(new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.03, 8, 16), mat));
@@ -146,6 +205,80 @@ export class Quests {
           leaf.rotation.z = (this.rnd() - 0.5) * 0.8;
           g.add(leaf);
         }
+      } else if (p.type === 'salt') {
+        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.salt, roughness: 0.9 });
+        const pouch = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), mat);
+        pouch.scale.set(1, 0.75, 1);
+        const tie = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.05, 6), new THREE.MeshStandardMaterial({ color: 0x8a7a5a }));
+        tie.position.y = 0.09;
+        g.add(pouch, tie);
+      } else if (p.type === 'bottle') {
+        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.bottle, roughness: 0.25, metalness: 0.1 });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.2, 8), mat);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.09, 8), mat);
+        neck.position.y = 0.14;
+        g.add(body, neck);
+      } else if (p.type === 'brick') {
+        g.add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.11), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.brick, roughness: 0.95 })));
+      } else if (p.type === 'cloth') {
+        g.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.2), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.cloth, roughness: 1 })));
+      } else if (p.type === 'splint') {
+        const wood = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.splint, roughness: 0.9 });
+        const a = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.24, 5), wood);
+        const b = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.24, 5), wood);
+        b.position.x = 0.05;
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.012, 6, 10), new THREE.MeshStandardMaterial({ color: 0xb0a090 }));
+        band.position.y = 0.02;
+        band.rotation.x = Math.PI / 2;
+        g.add(a, b, band);
+      } else if (p.type === 'battery_lith' || p.type === 'battery_nuc') {
+        const stripe = p.type === 'battery_lith' ? 0x3a8ad8 : 0x3ad86a;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 0.12), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type], roughness: 0.5, metalness: 0.3 }));
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.04, 0.125), new THREE.MeshStandardMaterial({ color: stripe, emissive: stripe, emissiveIntensity: 1 }));
+        band.position.y = 0.05;
+        g.add(body, band);
+      } else if (p.type === 'lockpick') {
+        const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.lockpick, metalness: 0.85, roughness: 0.3 });
+        const a = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.24), mat);
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.24), mat);
+        a.rotation.y = -Math.PI / 2.4;
+        b.rotation.y = Math.PI / 2.4;
+        g.add(a, b);
+      } else if (p.type === 'camera') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.1), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.camera, roughness: 0.7 }));
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 10), new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.3, metalness: 0.5 }));
+        lens.rotation.x = Math.PI / 2;
+        lens.position.z = 0.08;
+        g.add(body, lens);
+      } else if (p.type === 'radio') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.06), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.radio, roughness: 0.8 }));
+        const dial = new THREE.Mesh(new THREE.CircleGeometry(0.03, 10), new THREE.MeshStandardMaterial({ color: 0xd8b85a, emissive: 0xd8b85a, emissiveIntensity: 0.8 }));
+        dial.position.set(0.03, 0.02, 0.032);
+        g.add(body, dial);
+      } else if (p.type === 'candle') {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.16, 8), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.candle, roughness: 0.6 }));
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 6), new THREE.MeshBasicMaterial({ color: 0xffb84a }));
+        flame.position.y = 0.11;
+        g.add(body, flame);
+      } else if (p.type === 'torch') {
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.3, 6), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.torch, roughness: 0.9 }));
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff8a2a }));
+        head.position.y = 0.18;
+        g.add(handle, head);
+      } else if (p.type === 'axe') {
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.34, 6), new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 }));
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.03), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.axe, metalness: 0.6, roughness: 0.35 }));
+        head.position.set(0.05, 0.15, 0);
+        g.add(handle, head);
+      } else if (p.type === 'trinket') {
+        g.add(new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.02, 6, 12), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.trinket, metalness: 0.9, roughness: 0.25 })));
+      } else if (p.type === 'cables') {
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 6, 14), new THREE.MeshStandardMaterial({ color: PICKUP_COLORS.cables, roughness: 0.6 }));
+        const red = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), new THREE.MeshStandardMaterial({ color: 0xc03828 }));
+        red.position.set(0.09, 0.03, 0);
+        const blk = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
+        blk.position.set(-0.09, -0.03, 0);
+        g.add(coil, red, blk);
       } else {
         const mat = new THREE.MeshStandardMaterial({ color: PICKUP_COLORS[p.type] || 0xaaaaaa, roughness: 0.6, metalness: p.type.startsWith('ammo') ? 0.4 : 0.1 });
         const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.16), mat);
@@ -187,6 +320,13 @@ export class Quests {
         this.checkWhispers();
         this.checkPriestNote(def.type);
       }
+      if (LETTER_IDS.includes(def.type)) {
+        if (!this.state.lettersFound.includes(def.type)) this.state.lettersFound.push(def.type);
+        if (!this.state.codeKnown && this.state.lettersFound.includes('note_s1') && this.state.lettersFound.includes('note_s2')) {
+          this.state.codeKnown = true;
+          this.hooks.message('You remember the numbers: 7 3 1 9', true);
+        }
+      }
       this.hooks.onPickup(id, def.type);
       return;
     }
@@ -211,6 +351,29 @@ export class Quests {
         this.hooks.message(`Nightshade (${count}/3)`);
         break;
       }
+      case 'salt': {
+        this.state.salts++;
+        this.hooks.message(`Ritual Salt (${this.state.salts}/3)`);
+        break;
+      }
+      case 'master_key':
+        this.hooks.message('The Master Key — it fits every locked thing in the vale', true);
+        this.hooks.netEmit('give', { items: { master_key: 1 } });
+        break;
+      case 'camera': this.hooks.message('Antique Camera acquired — press I to raise it'); break;
+      case 'radio': this.hooks.message('Hand Radio acquired — press U to listen'); break;
+      case 'torch': this.hooks.message('Torch acquired — press 5'); break;
+      case 'axe': this.hooks.message('Fire Axe acquired — press 4'); break;
+      case 'bottle':
+      case 'brick': this.hooks.message('Throwable acquired — press G'); break;
+      case 'candle': this.hooks.message('Candle acquired — press T to place'); break;
+      case 'cloth': this.hooks.message('Cloth acquired'); break;
+      case 'splint': this.hooks.message('Splint acquired'); break;
+      case 'battery_lith': this.hooks.message('Lithium Cell acquired'); break;
+      case 'battery_nuc': this.hooks.message('Experimental Cell acquired'); break;
+      case 'lockpick': this.hooks.message('Lockpick acquired'); break;
+      case 'trinket': this.hooks.message('Trinket acquired — the peddler pays for these'); break;
+      case 'cables': this.hooks.message('Splice Cables acquired — use X near water'); break;
       default: break;
     }
   }
@@ -273,6 +436,15 @@ export class Quests {
       id: 'mortar', pos: new THREE.Vector3(-25.2, 0.9, 8), radius: 2.6, prompt: 'Use mortar', enabled: true,
       onInteract: () => this.useMortar(),
     });
+
+    // ritual circle (feature 93) — world.ritualPos is a newer WorldRefs field; guard for older builds
+    const rp = this.ritualSpot();
+    if (rp) {
+      this.world.interactables.push({
+        id: 'ritual_circle', pos: rp.clone().setY(0.6), radius: 2.8, prompt: 'Perform the ritual', enabled: true,
+        onInteract: () => this.useRitual(),
+      });
+    }
   }
 
   useDoor(id: string) {
@@ -287,6 +459,29 @@ export class Quests {
         } else {
           this.hooks.subtitle('Locked. The keyhole is cold iron. The key is somewhere in the barn.', 4);
         }
+      }
+      if (id === 'shed') {
+        if (this.state.codeKnown) {
+          door.locked = false;
+          this.state.shedOpen = true;
+          this.hooks.message('The combination turns — 7319 accepted', true);
+          this.openDoor('shed');
+          this.hooks.netEmit('shed', { open: true });
+        } else {
+          this.hooks.subtitle('A combination lock. Four digits. The letters might remember.', 4);
+        }
+        return;
+      }
+      if (id === 'barn_storage' || id === 'clinic_back') {
+        if (this.localPlayerRef && this.localPlayerRef.inv.lockpick > 0) {
+          door.locked = false;
+          this.hooks.message('The pick springs the lock');
+          this.openDoor(id);
+          this.hooks.netEmit('door', { id, open: true });
+        } else {
+          this.hooks.subtitle('Locked — a thin pick could open this.', 4);
+        }
+        return;
       }
       return;
     }
@@ -437,6 +632,32 @@ export class Quests {
     }
   }
 
+  private ritualSpot(): THREE.Vector3 | null {
+    const w = this.world as WorldRefs & { ritualPos?: THREE.Vector3 };
+    return w.ritualPos || null;
+  }
+
+  useRitual() {
+    if (this.state.ritualDone) {
+      this.hooks.subtitle('The stones are warm. It is done.', 4);
+      return;
+    }
+    if (this.state.stage < 5) {
+      this.hooks.subtitle('The circle is inert. Finish the unmaking first.', 4);
+      return;
+    }
+    if (this.state.salts < 3) {
+      this.hooks.subtitle(`You need three circles of salt (${this.state.salts}/3).`, 4);
+      return;
+    }
+    this.state.ritualDone = true;
+    this.hooks.netEmit('ritual', {});
+    this.hooks.message('THE VILLAGE EXHALES — THE CURSE IS UNBOUND', true);
+    this.hooks.subtitle('The bell will not call for you again. Walk out of Hollow Vale a free soul.', 8);
+    this.hooks.onNoise(this.ritualSpot() ?? new THREE.Vector3(0, 1, 0), 30);
+    this.hooks.netEmit('give', { items: { pills: 2 } });
+  }
+
   useMortar() {
     if (this.state.doctorDone) {
       this.hooks.subtitle('The mortar smells of bitter leaves.', 3);
@@ -482,6 +703,7 @@ export class Quests {
           this.disableInteractable(id);
           const def = PICKUPS.find(p => p.id === id);
           if (def && NOTE_IDS.has(def.type) && !this.state.notesRead.includes(def.type)) this.state.notesRead.push(def.type);
+          if (def && LETTER_IDS.includes(def.type) && !this.state.lettersFound.includes(def.type)) this.state.lettersFound.push(def.type);
         }
         break;
       }
@@ -537,6 +759,19 @@ export class Quests {
         if (gc) { const i = this.world.colliders.indexOf(gc); if (i >= 0) this.world.colliders.splice(i, 1); }
         break;
       }
+      case 'shed': {
+        this.state.shedOpen = true;
+        const sd = this.world.doors.get('shed');
+        if (sd) {
+          sd.locked = false;
+          sd.open = true;
+          sd.pivot.rotation.y = -Math.PI * 0.55;
+          const ci = this.world.colliders.indexOf(sd.collider);
+          if (ci >= 0) this.world.colliders.splice(ci, 1);
+        }
+        break;
+      }
+      case 'ritual': this.state.ritualDone = true; break;
       case 'craft': {
         if (data.what === 'rifle') this.state.rifleCrafted = true;
         if (data.what === 'remedy') this.state.doctorDone = true;
@@ -587,13 +822,62 @@ export class Quests {
       const h = ['pk_herb_1', 'pk_herb_2', 'pk_herb_3'].filter(x => this.state.picked.includes(x)).length;
       sides.push(`Doctor\u2019s Remedy: nightshade ${h}/3 \u2192 clinic mortar`);
     }
-    if (!this.state.whisperReward) sides.push(`Whispers of the Dead: notes ${this.state.notesRead.length}/8`);
+    if (!this.state.whisperReward) sides.push(`Whispers of the Dead: notes ${this.state.notesRead.length}/${NOTES.length}`);
+    if (this.state.lettersFound.length < 3) sides.push(`Letters from the Dead: ${this.state.lettersFound.length}/3`);
+    if (!this.state.shedOpen) sides.push(`The Locked Shed: ${this.state.codeKnown ? 'dial in 7319' : 'find the four digits in the letters'}`);
+    if (!this.state.ritualDone && (this.state.salts > 0 || s >= 5)) sides.push(`The Old Stones: salt circles ${this.state.salts}/3`);
     return { main: mains[Math.min(s, mains.length - 1)], sides };
+  }
+
+  getQuestLog(): { id: string; title: string; desc: string; done: boolean; active: boolean; side: boolean }[] {
+    const s = this.state;
+    const titles = ['The Key in the Barn', 'The Church of the Backwards Bell', 'Three Flames', 'What the Well Swallowed', 'The Unmaking', 'Run for the Gate'];
+    const descs = [
+      'Find the church key in the old barn (east)',
+      "Unlock the church and read the priest's letter",
+      `Light the three braziers (${s.braziersLit.length}/3) — Miller's, Farmhouse, Annex`,
+      'Crank the well and take what rises',
+      'Place the amulet on the cemetery altar (north-west)',
+      s.stage >= 6 ? 'Escape through the forest gate' : 'Open the forest gate (south) and escape',
+    ];
+    const log: { id: string; title: string; desc: string; done: boolean; active: boolean; side: boolean }[] = titles.map((title, i) => ({
+      id: 'm' + (i + 1), title, desc: descs[i], done: s.stage > i, active: s.stage === i, side: false,
+    }));
+    const st = s.picked.includes('pk_stock') ? 1 : 0;
+    const br = s.picked.includes('pk_barrel') ? 1 : 0;
+    const herbs = ['pk_herb_1', 'pk_herb_2', 'pk_herb_3'].filter(h => s.picked.includes(h)).length;
+    log.push({ id: 's_rifle', title: "The Hunter's Rifle", desc: `stock ${st}/1, barrel ${br}/1 → workbench`, done: s.rifleCrafted, active: !s.rifleCrafted, side: true });
+    log.push({ id: 's_remedy', title: "Doctor's Remedy", desc: `nightshade ${herbs}/3 → clinic mortar`, done: s.doctorDone, active: !s.doctorDone, side: true });
+    log.push({ id: 's_whispers', title: 'Whispers of the Dead', desc: `notes ${s.notesRead.length}/${NOTES.length}`, done: s.whisperReward, active: !s.whisperReward, side: true });
+    log.push({ id: 's_letters', title: 'Letters from the Dead', desc: `${s.lettersFound.length}/3 found`, done: s.lettersFound.length >= 3, active: s.lettersFound.length < 3, side: true });
+    log.push({ id: 's_shed', title: 'The Locked Shed', desc: s.codeKnown ? 'You know the numbers — 7319' : 'Find the four digits in the letters', done: s.shedOpen, active: !s.shedOpen, side: true });
+    log.push({ id: 's_ritual', title: 'The Old Stones', desc: `Salt circles ${s.salts}/3 at the old stones`, done: s.ritualDone, active: !s.ritualDone, side: true });
+    return log;
+  }
+
+  currentTarget(): { x: number; z: number; label: string } | null {
+    const s = this.state.stage;
+    if (s === 0) return { x: 28, z: -8, label: 'Old barn' };
+    if (s === 1) return { x: 0, z: -25, label: 'The church' };
+    if (s === 2) {
+      const b = this.world.braziers.find(x => !x.lit);
+      return b ? { x: b.pos3.x, z: b.pos3.z, label: 'Brazier' } : null;
+    }
+    if (s === 3) return { x: 0, z: 2, label: 'The well' };
+    if (s === 4) return { x: -33, z: -41, label: 'The altar' };
+    if (s === 5 || s === 6) return { x: 0, z: 55, label: 'The gate' };
+    return null;
   }
 
   serialize(): QuestState { return { ...this.state }; }
   restore(s: Partial<QuestState>) {
     Object.assign(this.state, s);
+    // defaults for saves made before the letters/ritual features
+    this.state.lettersFound = this.state.lettersFound || [];
+    this.state.salts = this.state.salts || 0;
+    this.state.codeKnown = !!this.state.codeKnown;
+    this.state.shedOpen = !!this.state.shedOpen;
+    this.state.ritualDone = !!this.state.ritualDone;
     // re-apply picked items
     for (const id of this.state.picked) {
       const mesh = this.pickupMeshes.get(id);

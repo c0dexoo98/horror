@@ -1,5 +1,6 @@
 // HOLLOW VALE — UI: menus, HUD, touch controls, note reader, overlays (self-contained DOM)
-import type { Input, Settings } from './core';
+import { iconSvg, loadTouchLayout, saveTouchLayout, clearTouchLayout } from './core';
+import type { Input, Settings, TouchLayout } from './core';
 import type { Player, WeaponId } from './player';
 import type { Quests, NoteDef } from './quests';
 
@@ -13,7 +14,17 @@ export interface UICallbacks {
   onQuitToMenu: () => void;
   onResume: () => void;
   onSettingsChanged: (s: Settings) => void;
+  onToggleOverlay?: (name: 'map' | 'quest' | 'radio') => void;
+  onCycleWeapon?: () => void;
+  onRadioTune?: (freq: number) => void;
+  onTrade?: (index: number) => void;
 }
+
+export interface QuestLogEntry { id: string; title: string; desc: string; done: boolean; active: boolean; side?: boolean }
+export interface TradeEntry { label: string; afford: boolean }
+export interface MapTarget { x: number; z: number; label: string }
+export interface MapData { px: number; pz: number; yaw: number; target: MapTarget | null; visited: Set<string> | null }
+export interface RadioData { freq: number; level: number; message: string | null }
 
 const CSS = `
 #hv-root { position: fixed; inset: 0; z-index: 50; font-family: 'Courier New', monospace; color: #cfc9bd; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none; }
@@ -54,6 +65,9 @@ const CSS = `
 .hv-bar.fe > i { background: #4a3a6a; }
 .hv-bar.ba > i { background: #8a7a3a; }
 .hv-vlabel { font-size: 9px; letter-spacing: 0.2em; color: #6f695e; margin-top: 7px; }
+#hv-status { position: absolute; left: 16px; bottom: 150px; display: flex; flex-wrap: wrap; max-width: 46vw; }
+.hv-st { display: inline-flex; gap: 4px; align-items: center; background: rgba(10,8,8,0.7); border: 1px solid #2e2822; padding: 3px 6px; margin-right: 5px; font-size: 10px; }
+.hv-st svg { pointer-events: none; }
 #hv-hotbar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
 .hv-slot { width: 52px; height: 52px; border: 1px solid #2e2822; background: rgba(10,8,8,0.6); display: flex; align-items: center; justify-content: center; font-size: 9px; color: #8f887a; position: relative; letter-spacing: 0.05em; text-align: center; }
 .hv-slot.active { border-color: #8f1d1d; color: #d8cfae; box-shadow: 0 0 12px rgba(143,29,29,0.35); }
@@ -67,21 +81,55 @@ const CSS = `
 @keyframes hvmsg { 0% {opacity: 0; transform: translateY(8px);} 10% {opacity: 1; transform: none;} 78% {opacity: 1;} 100% {opacity: 0;} }
 #hv-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 42%, rgba(60,0,0,0.55) 100%); opacity: 0; transition: opacity 0.4s; }
 #hv-damage { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 30%, rgba(150,10,10,0.5) 100%); opacity: 0; }
+#hv-blood { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.hv-splat { position: absolute; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(120,10,10,0.55), transparent 70%); }
 #hv-teammates { position: absolute; top: 14px; right: 16px; text-align: right; }
 .hv-mate { font-size: 11px; color: #9a9284; margin: 3px 0; text-shadow: 0 1px 3px #000; }
 .hv-mate .mbar { display: inline-block; width: 60px; height: 5px; background: #221e1a; margin-left: 8px; vertical-align: middle; }
 .hv-mate .mbar i { display: block; height: 100%; background: #7a4a2a; }
 #hv-timer { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 20px; letter-spacing: 0.2em; color: #b8a888; text-shadow: 0 1px 4px #000; }
 #hv-role { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.3em; color: #7a6f5c; text-transform: uppercase; }
+#hv-compass { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; }
+#hv-compass .arrow { display: inline-block; width: 26px; height: 26px; line-height: 24px; text-align: center; border: 1px solid #3a332c; border-radius: 50%; background: rgba(10,8,8,0.6); color: #d8cfae; font-size: 15px; transition: transform 0.08s linear; }
+#hv-compass .clabel { font-size: 11px; letter-spacing: 0.14em; color: #b8a888; text-shadow: 0 1px 4px #000; text-transform: uppercase; }
+#hv-camframe { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px rgba(0,0,0,0.8); }
+#hv-camframe .cbr { position: absolute; width: 34px; height: 34px; border: 2px solid rgba(240,238,228,0.9); }
+#hv-camframe .c1 { top: 18px; left: 18px; border-right: none; border-bottom: none; }
+#hv-camframe .c2 { top: 18px; right: 18px; border-left: none; border-bottom: none; }
+#hv-camframe .c3 { bottom: 18px; left: 18px; border-right: none; border-top: none; }
+#hv-camframe .c4 { bottom: 18px; right: 18px; border-left: none; border-top: none; }
+#hv-camframe .clabel { position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.28em; color: rgba(240,238,228,0.9); text-shadow: 0 1px 4px #000; white-space: nowrap; }
 /* touch */
 #hv-touch { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
 #hv-touch .zone { position: absolute; pointer-events: auto; }
 #hv-stick-base { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 1.5px solid rgba(160,150,130,0.25); background: rgba(20,16,14,0.25); }
 #hv-stick-nub { position: absolute; width: 52px; height: 52px; border-radius: 50%; background: rgba(180,168,145,0.3); border: 1px solid rgba(200,190,165,0.4); }
-.hv-tbtn { position: absolute; width: 62px; height: 62px; border-radius: 50%; border: 1.5px solid rgba(160,150,130,0.35); background: rgba(20,16,14,0.4); color: #cfc4a8; font-family: inherit; font-size: 10px; letter-spacing: 0.06em; display: flex; align-items: center; justify-content: center; pointer-events: auto; text-transform: uppercase; }
+.hv-tbtn { position: absolute; width: 62px; height: 62px; border-radius: 50%; border: 1.5px solid rgba(160,150,130,0.35); background: rgba(20,16,14,0.4); color: #cfc4a8; font-family: inherit; font-size: 10px; letter-spacing: 0.06em; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; text-transform: uppercase; }
 .hv-tbtn:active, .hv-tbtn.on { background: rgba(143,29,29,0.45); border-color: rgba(220,120,100,0.6); }
 .hv-tbtn.small { width: 48px; height: 48px; font-size: 9px; }
+.hv-tico { display: block; line-height: 0; }
+.hv-tico svg { pointer-events: none; }
+.hv-tbtn.hv-editing { border-color: rgba(216,178,90,0.7); cursor: move; }
+.hv-tbtn.hv-sel { outline: 2px solid #d8b25a; outline-offset: 2px; z-index: 6; }
+#hv-editbar { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 10px; pointer-events: auto; background: rgba(12,10,8,0.94); border: 1px solid #6a5a2a; padding: 8px 12px; font-size: 11px; letter-spacing: 0.08em; color: #d8c9a0; max-width: 94vw; flex-wrap: wrap; justify-content: center; }
+#hv-editbar .hv-ebtn { width: auto; margin: 0; padding: 6px 12px; font-size: 10px; display: inline-block; }
+#hv-edit-size { width: 110px; accent-color: #d8b25a; }
 #hv-lookzone { position: absolute; right: 0; top: 0; width: 55%; height: 100%; pointer-events: auto; }
+/* journal / quest log */
+.hv-quest-row { padding: 9px 6px; border-bottom: 1px dashed #26221c; }
+.hv-quest-row .qt { font-size: 14px; letter-spacing: 0.04em; }
+.hv-quest-row .qd { font-size: 12px; color: #7d766a; margin-top: 3px; }
+/* map */
+#hv-root #hv-map-canvas { position: relative; inset: auto; width: min(460px, 86vw) !important; height: min(460px, 86vw) !important; border: 1px solid #2e2924; background: #1a1712; }
+/* radio */
+.hv-radio-readout { font-size: 36px; letter-spacing: 0.15em; color: #9ab05a; text-shadow: 0 0 18px rgba(120,180,60,0.35); }
+#hv-radio-bars { display: flex; gap: 5px; justify-content: center; margin: 12px 0 4px; }
+.hv-rbar { width: 20px; height: 24px; background: #1c1812; border: 1px solid #2e2822; }
+.hv-rbar.lit { background: #7a9a3a; box-shadow: 0 0 8px rgba(130,170,60,0.5); }
+#hv-radio-msg { font-family: 'Courier New', monospace; font-size: 13px; color: #7aa04a; min-height: 54px; margin-top: 12px; white-space: pre-wrap; text-align: left; background: rgba(14,18,10,0.5); border: 1px solid #242a1a; padding: 10px 12px; }
+/* trade */
+.hv-trade-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px dashed #26221c; font-size: 13px; color: #a89f8c; }
+.hv-tbuy { width: auto; margin: 0; padding: 6px 16px; font-size: 11px; display: inline-block; }
 /* lobby */
 #hv-lobby-code { font-family: Georgia, serif; font-size: 54px; letter-spacing: 0.3em; color: #d8c9a0; text-shadow: 0 0 30px rgba(160,130,60,0.4); margin: 8px 0; }
 .hv-players { margin: 12px 0; width: 100%; }
@@ -98,8 +146,24 @@ const CSS = `
 ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2e2822; } ::-webkit-scrollbar-track { background: transparent; }
 `;
 
-type Silent = Record<string, never>;
-void (0 as unknown as Silent | undefined);
+/* map static feature data (world coords) */
+const MAP_ROADS: number[][] = [
+  [-58, 14, 40, 14],
+  [0, -25, 0, 55],
+  [14, 14, 28, 14],
+  [28, 14, 28, -3],
+  [0, 14, 22, 14],
+];
+const MAP_BLD: { label: string; x: number; z: number; w: number; h: number }[] = [
+  { label: 'CHURCH', x: 0, z: -30, w: 15, h: 10 },
+  { label: 'BARN', x: 28, z: -8, w: 13, h: 9 },
+  { label: 'MILL', x: -20, z: 12, w: 10, h: 8 },
+  { label: 'FARM', x: 22, z: 18, w: 12, h: 9 },
+  { label: 'ANNEX', x: 18, z: -28, w: 8, h: 7 },
+  { label: 'CLINIC', x: -28, z: 10, w: 10, h: 8 },
+  { label: 'WORK', x: -5, z: 30, w: 7, h: 6 },
+  { label: 'CABIN', x: 45, z: -30, w: 7, h: 6 },
+];
 
 export class UI {
   root: HTMLElement;
@@ -109,6 +173,7 @@ export class UI {
   private objMain: HTMLElement;
   private objSides: HTMLElement;
   private bars: Record<string, HTMLElement> = {};
+  private barLabels: Record<string, HTMLElement> = {};
   private hotbarEl: HTMLElement;
   private promptEl: HTMLElement;
   private subtitleEl: HTMLElement;
@@ -121,6 +186,7 @@ export class UI {
   private touchWrap: HTMLElement;
   private stickBase: HTMLElement;
   private stickNub: HTMLElement;
+  private lookZoneEl!: HTMLElement;
   private crosshair: HTMLElement;
   private fadeEl: HTMLElement;
   private subtitleTimer = 0;
@@ -134,6 +200,44 @@ export class UI {
   private noteCloseCb: (() => void) | null = null;
   private crouchToggle = false;
   private _settings: Settings;
+  /* overlays */
+  private journalCloseCb: (() => void) | null = null;
+  private mapCloseCb: (() => void) | null = null;
+  private radioCloseCb: (() => void) | null = null;
+  private tradeBuyCb: ((i: number) => void) | null = null;
+  private tradeCloseCb: (() => void) | null = null;
+  private questListEl: HTMLElement | null = null;
+  private tradeListEl: HTMLElement | null = null;
+  /* touch layout + edit mode */
+  private layout: TouchLayout = loadTouchLayout() ?? {};
+  private touchBtns: Record<string, HTMLButtonElement> = {};
+  private touchDefaults: Record<string, string> = {};
+  private editMode = false;
+  private editBar: HTMLElement | null = null;
+  private editSlider: HTMLInputElement | null = null;
+  private selectedBtn: HTMLButtonElement | null = null;
+  /* map */
+  private mapCanvas: HTMLCanvasElement | null = null;
+  private mapCtx: CanvasRenderingContext2D | null = null;
+  private mapData: MapData | null = null;
+  private mapAcc = 0;
+  /* compass */
+  private compassEl: HTMLElement;
+  private compassArrow: HTMLElement;
+  private compassLabelEl: HTMLElement;
+  private lastBearing = 0;
+  private lastLabel = '';
+  private compassOn = false;
+  /* status row / blood / camera frame */
+  private statusEl: HTMLElement;
+  private bloodEl: HTMLElement;
+  private camframeEl: HTMLElement;
+  private camframeLabel: HTMLElement;
+  /* radio */
+  private radioFreqEl!: HTMLElement;
+  private radioMsgEl!: HTMLElement;
+  private radioSlider!: HTMLInputElement;
+  private radioBarsEl!: HTMLElement;
 
   constructor(container: HTMLElement, input: Input, settings: Settings, cb: UICallbacks) {
     this.cb = cb;
@@ -185,6 +289,7 @@ export class UI {
       const vl = document.createElement('div');
       vl.className = 'hv-vlabel';
       vl.textContent = label;
+      this.barLabels[key] = vl;
       const bar = document.createElement('div');
       bar.className = 'hv-bar ' + key;
       const fill = document.createElement('i');
@@ -197,6 +302,11 @@ export class UI {
     mkBar('fe', 'DREAD');
     mkBar('ba', 'TORCH');
     this.hud.appendChild(vitals);
+
+    this.statusEl = document.createElement('div');
+    this.statusEl.id = 'hv-status';
+    this.statusEl.classList.add('hv-hidden');
+    this.hud.appendChild(this.statusEl);
 
     this.hotbarEl = document.createElement('div');
     this.hotbarEl.id = 'hv-hotbar';
@@ -227,6 +337,34 @@ export class UI {
     this.damageEl.id = 'hv-damage';
     this.hud.appendChild(this.damageEl);
 
+    this.bloodEl = document.createElement('div');
+    this.bloodEl.id = 'hv-blood';
+    this.hud.appendChild(this.bloodEl);
+
+    this.compassEl = document.createElement('div');
+    this.compassEl.id = 'hv-compass';
+    this.compassEl.classList.add('hv-hidden');
+    this.compassArrow = document.createElement('span');
+    this.compassArrow.className = 'arrow';
+    this.compassArrow.textContent = '↑';
+    this.compassLabelEl = document.createElement('span');
+    this.compassLabelEl.className = 'clabel';
+    this.compassEl.append(this.compassArrow, this.compassLabelEl);
+    this.hud.appendChild(this.compassEl);
+
+    this.camframeEl = document.createElement('div');
+    this.camframeEl.id = 'hv-camframe';
+    this.camframeEl.classList.add('hv-hidden');
+    for (let i = 1; i <= 4; i++) {
+      const c = document.createElement('div');
+      c.className = 'cbr c' + i;
+      this.camframeEl.appendChild(c);
+    }
+    this.camframeLabel = document.createElement('div');
+    this.camframeLabel.className = 'clabel';
+    this.camframeEl.appendChild(this.camframeLabel);
+    this.hud.appendChild(this.camframeEl);
+
     /* ---- touch ---- */
     this.touchWrap = document.createElement('div');
     this.touchWrap.id = 'hv-touch';
@@ -239,6 +377,7 @@ export class UI {
     this.stickNub.classList.add('hv-hidden');
     this.touchWrap.append(this.stickBase, this.stickNub);
     this.bindTouch(settings);
+    this.buildEditBar();
 
     this.fadeEl = document.createElement('div');
     this.fadeEl.className = 'hv-fade';
@@ -255,6 +394,10 @@ export class UI {
     this.buildWinScreen();
     this.buildPauseScreen();
     this.buildLoadingScreen();
+    this.buildQuestLogScreen();
+    this.buildMapScreen();
+    this.buildRadioScreen();
+    this.buildTradeScreen();
   }
 
   private screen(id: string, inner?: HTMLElement[]): HTMLElement {
@@ -443,11 +586,14 @@ export class UI {
       ['C', 'crouch (quiet)'], ['E', 'interact / pick up'], ['LMB', 'attack / shoot'],
       ['R', 'reload'], ['F', 'torch'], ['Q', 'throw noise grenade'], ['H', 'heal (bandage / pills)'],
       ['V', 'switch 1st / 3rd person'], ['1 2 3', 'knife / revolver / rifle'], ['ESC', 'pause'],
+      ['G', 'throw bottle / brick'], ['M', 'village map'], ['J', 'journal'], ['B', 'hold breath'],
+      ['N', 'hand dynamo'], ['U', 'hand radio'], ['4 / 5', 'axe / torch'], ['T', 'place candle'],
+      ['X', 'splice cables near water'], ['I', 'antique camera'],
     ].map(r => `<span class="hv-kbd">${r[0]}</span> ${r[1]}`).join('<br>');
     panel.appendChild(kb);
     const tips = document.createElement('div');
     tips.style.cssText = 'margin-top:14px;font-size:12px;color:#7d766a;line-height:1.8;font-style:italic;';
-    tips.innerHTML = '• The Shepherd hunts by sound. Sprinting screams through the night.<br>• Your torch betrays you in the dark — but total darkness feeds the Dread.<br>• Gunshots stagger him. The old rifle drops him to his knees.<br>• In Co-op, revive the fallen before the night takes them.';
+    tips.innerHTML = '• The Shepherd hunts by sound. Sprinting screams through the night.<br>• Your torch betrays you in the dark — but total darkness feeds the Dread.<br>• Gunshots stagger him. The old rifle drops him to his knees.<br>• In Co-op, revive the fallen before the night takes them.<br>• Touch: EDIT button rearranges &amp; resizes buttons (saved).';
     panel.appendChild(tips);
     const back = mkBtn('Back', () => this.show('menu'));
     panel.appendChild(back);
@@ -468,6 +614,301 @@ export class UI {
     el.innerHTML = `<div class="hv-note-title">${esc(n.title)}</div>${esc(n.text).replace(/\n/g, '<br>')}`;
     this.noteCloseCb = onClose;
     this.show('note');
+  }
+
+  /* ---------- quest journal ---------- */
+  private buildQuestLogScreen() {
+    const panel = document.createElement('div');
+    panel.className = 'hv-panel';
+    const h = document.createElement('div');
+    h.className = 'hv-h2';
+    h.textContent = 'JOURNAL — Hollow Vale';
+    const list = document.createElement('div');
+    list.id = 'hv-quest-list';
+    this.questListEl = list;
+    const close = mkBtn('Close', () => { this.show(null); const cb = this.journalCloseCb; this.journalCloseCb = null; if (cb) cb(); });
+    close.style.marginTop = '16px';
+    panel.append(h, list, close);
+    this.screen('questlog', [panel]);
+  }
+  showQuestLog(entries: QuestLogEntry[], onClose: () => void) {
+    this.journalCloseCb = onClose;
+    const list = this.questListEl;
+    if (!list) return;
+    list.innerHTML = '';
+    for (const e of entries) {
+      const row = document.createElement('div');
+      row.className = 'hv-quest-row';
+      const mark = e.done
+        ? '<span style="color:#4a8f3a">✔</span>'
+        : e.active ? '<span style="color:#b83a2a">◆</span>' : '<span style="color:#4a443a">○</span>';
+      const tstyle = e.done ? 'text-decoration:line-through;color:#6f695e;' : e.active ? 'color:#e8dfc8;' : 'color:#a89f8c;';
+      row.innerHTML = `<div class="qt">${mark} <span style="${tstyle}">${esc(e.title)}</span></div><div class="qd">${esc(e.desc)}</div>`;
+      if (e.side) { row.style.paddingLeft = '24px'; row.style.fontSize = '12px'; }
+      list.appendChild(row);
+    }
+    this.show('questlog');
+  }
+
+  /* ---------- map overlay ---------- */
+  private buildMapScreen() {
+    const panel = document.createElement('div');
+    panel.className = 'hv-panel';
+    panel.style.textAlign = 'center';
+    const h = document.createElement('div');
+    h.className = 'hv-h2';
+    h.textContent = 'VILLAGE MAP';
+    const cv = document.createElement('canvas');
+    cv.id = 'hv-map-canvas';
+    cv.width = 460;
+    cv.height = 460;
+    const close = mkBtn('Close', () => { this.show(null); const cb = this.mapCloseCb; this.mapCloseCb = null; if (cb) cb(); });
+    close.style.marginTop = '14px';
+    panel.append(h, cv, close);
+    this.screen('map', [panel]);
+    this.mapCanvas = cv;
+    this.mapCtx = cv.getContext('2d');
+  }
+  setMapData(d: MapData) {
+    this.mapData = d;
+    const ms = this.screens['map'];
+    if (ms && !ms.classList.contains('hv-hidden')) this.drawMap();
+  }
+  openMap(onClose: () => void) {
+    this.mapCloseCb = onClose;
+    this.show('map');
+    this.drawMap();
+  }
+  private drawMap() {
+    const ctx = this.mapCtx, d = this.mapData;
+    if (!ctx || !d) return;
+    const S = 460, k = S / 124;
+    const X = (x: number) => (x + 62) * k;
+    const Y = (z: number) => (z + 62) * k; // world -Z is up on the map
+    const vis = (x: number, z: number) => !d.visited || d.visited.has(`${Math.floor(x / 4) * 4},${Math.floor(z / 4) * 4}`);
+    ctx.clearRect(0, 0, S, S);
+    ctx.fillStyle = '#1a1712';
+    ctx.fillRect(0, 0, S, S);
+    // fog of war — visited 4m cells
+    if (d.visited) {
+      ctx.fillStyle = '#221e18';
+      for (const key of d.visited) {
+        const parts = key.split(',');
+        const cx = parseFloat(parts[0]), cz = parseFloat(parts[1]);
+        if (!isFinite(cx) || !isFinite(cz) || cx < -62 || cx >= 62 || cz < -62 || cz >= 62) continue;
+        ctx.fillRect(X(cx), Y(cz), 4 * k, 4 * k);
+      }
+    }
+    // grid
+    ctx.strokeStyle = 'rgba(120,108,84,0.07)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = -62; c <= 62; c += 4) {
+      ctx.moveTo(X(c), 0); ctx.lineTo(X(c), S);
+      ctx.moveTo(0, Y(c)); ctx.lineTo(S, Y(c));
+    }
+    ctx.stroke();
+    // roads
+    ctx.strokeStyle = 'rgba(140,124,96,0.22)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (const r of MAP_ROADS) {
+      if (!vis((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)) continue;
+      ctx.moveTo(X(r[0]), Y(r[1]));
+      ctx.lineTo(X(r[2]), Y(r[3]));
+    }
+    ctx.stroke();
+    // buildings
+    ctx.lineWidth = 1.5;
+    ctx.font = '8px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    for (const b of MAP_BLD) {
+      if (!vis(b.x + b.w / 2, b.z + b.h / 2)) continue;
+      ctx.strokeStyle = '#6a5f4a';
+      ctx.strokeRect(X(b.x), Y(b.z), b.w * k, b.h * k);
+      ctx.fillStyle = '#8f8570';
+      ctx.fillText(b.label, X(b.x + b.w / 2), Y(b.z + b.h / 2) + 3);
+    }
+    // well
+    if (vis(0, 2)) {
+      ctx.strokeStyle = '#8f8570';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(X(0), Y(2), 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#8f8570';
+      ctx.fillText('WELL', X(0), Y(2) - 8);
+    }
+    // gate
+    if (vis(0, 55)) {
+      ctx.strokeStyle = '#a89f8c';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(X(-2.5), Y(55)); ctx.lineTo(X(2.5), Y(55)); ctx.stroke();
+      ctx.fillStyle = '#a89f8c';
+      ctx.fillText('GATE', X(0), Y(55) + 13);
+    }
+    // cemetery
+    if (vis(-33, -35)) {
+      ctx.strokeStyle = '#5a544a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(X(-46), Y(-46), 26 * k, 22 * k);
+      ctx.fillStyle = '#7d766a';
+      ctx.fillText('CEMETERY', X(-33), Y(-35) + 3);
+    }
+    // merchant cart
+    if (vis(10, 48)) {
+      ctx.strokeStyle = '#8a7a3a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(X(8.5), Y(46.5), 3 * k, 3 * k);
+      ctx.fillStyle = '#8a7a3a';
+      ctx.fillText('CART', X(10), Y(46.5) - 5);
+    }
+    // ritual circle
+    if (vis(-30, -38)) {
+      ctx.strokeStyle = '#7a2a2a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(X(-30), Y(-38), 4 * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#8a3a3a';
+      ctx.fillText('RITUAL', X(-30), Y(-38) - 4 * k - 5);
+    }
+    // target: pulsing red X
+    if (d.target) {
+      const a = 0.5 + 0.5 * Math.sin(performance.now() / 240);
+      const tx = X(d.target.x), ty = Y(d.target.z), r = 7;
+      ctx.strokeStyle = `rgba(200,42,30,${a.toFixed(2)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(tx - r, ty - r); ctx.lineTo(tx + r, ty + r);
+      ctx.moveTo(tx + r, ty - r); ctx.lineTo(tx - r, ty + r);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(224,130,110,${a.toFixed(2)})`;
+      ctx.font = '10px "Courier New", monospace';
+      ctx.fillText(d.target.label, tx, ty - 12);
+    }
+    // player: triangle rotated by yaw (dx=-sin, dz=-cos is forward; -Z is up)
+    const fx = -Math.sin(d.yaw), fz = -Math.cos(d.yaw);
+    const px = Math.min(Math.max(X(d.px), 10), S - 10);
+    const py = Math.min(Math.max(Y(d.pz), 10), S - 10);
+    ctx.beginPath();
+    ctx.moveTo(px + fx * 9, py + fz * 9);
+    ctx.lineTo(px - fx * 6 - fz * 5, py - fz * 6 + fx * 5);
+    ctx.lineTo(px - fx * 6 + fz * 5, py - fz * 6 - fx * 5);
+    ctx.closePath();
+    ctx.fillStyle = '#e8dfc8';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(20,16,12,0.9)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // compass N (world -Z) top
+    ctx.fillStyle = '#b8a888';
+    ctx.font = '10px "Courier New", monospace';
+    ctx.fillText('N', S / 2, 11);
+    ctx.strokeStyle = '#b8a888';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(S / 2, 26); ctx.lineTo(S / 2, 16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(S / 2 - 3, 20); ctx.lineTo(S / 2, 15); ctx.lineTo(S / 2 + 3, 20); ctx.stroke();
+  }
+
+  /* ---------- compass strip ---------- */
+  setCompass(bearing: number | null, label: string) {
+    if (bearing === null) {
+      if (this.compassOn) { this.compassEl.classList.add('hv-hidden'); this.compassOn = false; }
+      return;
+    }
+    if (!this.compassOn) { this.compassEl.classList.remove('hv-hidden'); this.compassOn = true; }
+    if (Math.abs(bearing - this.lastBearing) > 0.03 || label !== this.lastLabel) {
+      this.lastBearing = bearing;
+      this.lastLabel = label;
+      this.compassArrow.style.transform = `rotate(${bearing}rad)`;
+      this.compassLabelEl.textContent = label;
+    }
+  }
+
+  /* ---------- radio overlay ---------- */
+  private buildRadioScreen() {
+    const panel = document.createElement('div');
+    panel.className = 'hv-panel';
+    panel.style.textAlign = 'center';
+    const h = document.createElement('div');
+    h.className = 'hv-h2';
+    h.textContent = 'HAND RADIO';
+    const readout = document.createElement('div');
+    readout.className = 'hv-radio-readout';
+    readout.textContent = '—.— MHz';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '88'; slider.max = '108'; slider.step = '0.1'; slider.value = '100';
+    slider.className = 'hv-range';
+    slider.style.cssText = 'width:min(320px,80vw);margin:14px auto 4px;display:block;';
+    slider.setAttribute('aria-label', 'Radio frequency');
+    slider.oninput = () => {
+      const f = parseFloat(slider.value);
+      readout.textContent = f.toFixed(1) + ' MHz';
+      this.cb.onRadioTune?.(f);
+    };
+    const bars = document.createElement('div');
+    bars.id = 'hv-radio-bars';
+    for (let i = 0; i < 5; i++) {
+      const b = document.createElement('span');
+      b.className = 'hv-rbar';
+      bars.appendChild(b);
+    }
+    const msg = document.createElement('div');
+    msg.id = 'hv-radio-msg';
+    msg.textContent = '...only static...';
+    const close = mkBtn('Close', () => { this.show(null); const cb = this.radioCloseCb; this.radioCloseCb = null; if (cb) cb(); });
+    close.style.marginTop = '16px';
+    panel.append(h, readout, slider, bars, msg, close);
+    this.screen('radio', [panel]);
+    this.radioFreqEl = readout;
+    this.radioSlider = slider;
+    this.radioBarsEl = bars;
+    this.radioMsgEl = msg;
+  }
+  setRadioData(d: RadioData) {
+    this.radioFreqEl.textContent = d.freq.toFixed(1) + ' MHz';
+    if (document.activeElement !== this.radioSlider) this.radioSlider.value = String(d.freq);
+    const kids = this.radioBarsEl.children;
+    for (let i = 0; i < kids.length; i++) kids[i].classList.toggle('lit', i < Math.round(d.level));
+    this.radioMsgEl.textContent = d.message ?? '...only static...';
+  }
+  openRadio(onClose: () => void) {
+    this.radioCloseCb = onClose;
+    this.show('radio');
+  }
+
+  /* ---------- trade panel ---------- */
+  private buildTradeScreen() {
+    const panel = document.createElement('div');
+    panel.className = 'hv-panel';
+    const h = document.createElement('div');
+    h.className = 'hv-h2';
+    h.textContent = 'WANDERING PEDDLER';
+    const list = document.createElement('div');
+    list.id = 'hv-trade-list';
+    this.tradeListEl = list;
+    const close = mkBtn('Close', () => { this.show(null); const cb = this.tradeCloseCb; this.tradeCloseCb = null; if (cb) cb(); });
+    close.style.marginTop = '16px';
+    panel.append(h, list, close);
+    this.screen('trade', [panel]);
+  }
+  showTrade(trades: TradeEntry[], onBuy: (i: number) => void, onClose: () => void) {
+    this.tradeBuyCb = onBuy;
+    this.tradeCloseCb = onClose;
+    const list = this.tradeListEl;
+    if (!list) return;
+    list.innerHTML = '';
+    trades.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'hv-trade-row';
+      const lbl = document.createElement('span');
+      lbl.textContent = t.label;
+      if (!t.afford) lbl.style.color = '#5f594e';
+      const buy = mkBtn('Buy', () => this.tradeBuyCb?.(i));
+      buy.classList.add('hv-tbuy');
+      buy.disabled = !t.afford;
+      row.append(lbl, buy);
+      list.appendChild(row);
+    });
+    this.show('trade');
   }
 
   /* ---------- death / win / pause ---------- */
@@ -568,27 +1009,63 @@ export class UI {
     else this.applyTouchSetting(this._settings);
   }
 
+  /* safe read of newer Player fields (jammed/statuses/breathT/batteryType/extended weapons) */
+  private pst(p: Player): {
+    jammed: boolean; unjamT: number; bleeding: number; poison: number; brokenLeg: number;
+    breathT: number; batteryType: string; has: (w: string) => boolean;
+  } {
+    const o = p as unknown as Record<string, unknown>;
+    const stObj = (o['statuses'] && typeof o['statuses'] === 'object') ? o['statuses'] as Record<string, number> : {};
+    const num = (k: string) => (typeof o[k] === 'number' ? (o[k] as number) : 0);
+    return {
+      jammed: !!o['jammed'],
+      unjamT: num('unjamT'),
+      bleeding: stObj['bleeding'] || 0,
+      poison: stObj['poison'] || 0,
+      brokenLeg: stObj['brokenLeg'] || 0,
+      breathT: num('breathT'),
+      batteryType: typeof o['batteryType'] === 'string' ? (o['batteryType'] as string) : 'alkaline',
+      has: (w: string) => p.weapons.includes(w as WeaponId),
+    };
+  }
+
   updateHUD(p: Player, q: Quests, opts: { versus?: boolean; timeLeft?: number; isMonster?: boolean; coopAlive?: number; coopTotal?: number }) {
     this.bars.hp.style.width = p.health + '%';
     this.bars.st.style.width = p.stamina + '%';
     this.bars.fe.style.width = p.fear + '%';
-    this.bars.ba.style.width = p.battery + '%';
+    this.bars.ba.style.width = Math.min(100, (p.battery / (p.batteryCap || 100)) * 100) + '%';
     this.vignette.style.opacity = String(Math.max(p.fear / 145, p.health < 35 ? 0.35 : 0));
     const obj = q.objectiveText();
     this.objMain.textContent = opts.isMonster ? 'Hunt them all before dawn' : obj.main;
     this.objSides.innerHTML = opts.isMonster ? '' : obj.sides.map(s => esc(s)).join('<br>');
+    // torch label reflects battery type
+    const st = this.pst(p);
+    this.barLabels['ba'].textContent = 'TORCH (' + st.batteryType.toUpperCase() + ')';
+    // status chips
+    const secs = (t: number) => Math.max(1, Math.ceil(t)) + 's';
+    const chips: string[] = [];
+    if (st.jammed) chips.push(stChip('reload', '#c23a2a', 'JAM', secs(st.unjamT)));
+    if (st.bleeding > 0) chips.push(stChip('drop', '#c23a2a', '', secs(st.bleeding)));
+    if (st.poison > 0) chips.push(stChip('skull', '#6a9a3a', '', secs(st.poison)));
+    if (st.brokenLeg > 0) chips.push(stChip('bone', '#c2a23a', '', secs(st.brokenLeg)));
+    if (st.breathT > 0) chips.push(stChip('breath', '#4aa8a8', '', secs(st.breathT)));
+    this.statusEl.innerHTML = chips.join('');
+    this.statusEl.classList.toggle('hv-hidden', chips.length === 0);
     // hotbar
     const slots: { key: string; label: string; cnt: string | null }[] = [];
     slots.push({ key: 'knife', label: '1 KNIFE', cnt: null });
     if (p.hasWeapon('pistol')) slots.push({ key: 'pistol', label: '2 REVOLVER', cnt: String(p.mag.pistol) + '/' + (p.inv.ammo_pistol || 0) });
     if (p.hasWeapon('rifle')) slots.push({ key: 'rifle', label: '3 RIFLE', cnt: String(p.mag.rifle) + '/' + (p.inv.ammo_rifle || 0) });
+    if (st.has('axe')) slots.push({ key: 'axe', label: '4 AXE', cnt: null });
+    if (st.has('torch')) slots.push({ key: 'torch', label: '5 TORCH', cnt: null });
     slots.push({ key: 'bandage', label: 'H BANDAGE', cnt: String(p.inv.bandage || 0) });
     slots.push({ key: 'pills', label: 'H PILLS', cnt: String(p.inv.pills || 0) });
     slots.push({ key: 'grenade', label: 'Q GRENADE', cnt: String(p.inv.grenade || 0) });
     this.hotbarEl.innerHTML = '';
+    const cur = String(p.current);
     for (const s of slots) {
       const d = document.createElement('div');
-      d.className = 'hv-slot' + (p.current === s.key ? ' active' : '');
+      d.className = 'hv-slot' + (cur === s.key ? ' active' : '');
       d.innerHTML = esc(s.label) + (s.cnt !== null ? `<span class="cnt">${esc(s.cnt)}</span>` : '');
       this.hotbarEl.appendChild(d);
     }
@@ -630,6 +1107,30 @@ export class UI {
   flashDamage() {
     this.damageEl.style.opacity = '0.9';
     setTimeout(() => { this.damageEl.style.opacity = '0'; }, 240);
+    const n = 1 + Math.floor(Math.random() * 2); // 1-2 splats per hit
+    for (let i = 0; i < n; i++) this.spawnSplat();
+  }
+  private spawnSplat() {
+    const el = document.createElement('div');
+    el.className = 'hv-splat';
+    const s = 90 + Math.random() * 130;
+    el.style.width = s + 'px';
+    el.style.height = s * (0.7 + Math.random() * 0.5) + 'px';
+    el.style.left = (Math.random() * 100) + '%';
+    el.style.top = (Math.random() * 100) + '%';
+    el.style.transform = `rotate(${Math.floor(Math.random() * 360)}deg)`;
+    el.style.opacity = '0.9';
+    el.style.transition = 'opacity 6s linear';
+    this.bloodEl.appendChild(el);
+    while (this.bloodEl.childElementCount > 6) this.bloodEl.firstElementChild?.remove();
+    setTimeout(() => { el.style.opacity = '0'; }, 80);
+    setTimeout(() => { el.remove(); }, 7000);
+  }
+
+  /* ---------- antique camera frame ---------- */
+  setCameraMode(on: boolean, film: number) {
+    this.camframeEl.classList.toggle('hv-hidden', !on);
+    if (on) this.camframeLabel.textContent = `ANTIQUE CAMERA — FILM ${film}`;
   }
 
   fadeIn() { this.fadeEl.style.opacity = '0'; }
@@ -646,6 +1147,12 @@ export class UI {
       this.subtitleTimer -= dt;
       if (this.subtitleTimer <= 0) this.subtitleEl.textContent = '';
     }
+    this.mapAcc += dt;
+    if (this.mapAcc >= 0.25) { // ~4 fps map redraw
+      this.mapAcc = 0;
+      const ms = this.screens['map'];
+      if (ms && !ms.classList.contains('hv-hidden')) this.drawMap();
+    }
   }
 
   /* ---------- touch controls ---------- */
@@ -660,6 +1167,104 @@ export class UI {
   }
   refreshTouch(settings: Settings) { this.applyTouchSetting(settings); }
 
+  private applyLayoutFor(btn: HTMLElement, id: string) {
+    const l = this.layout[id];
+    if (!l) return;
+    const w = 62 * (l.scale || 1);
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+    btn.style.width = w + 'px';
+    btn.style.height = w + 'px';
+    btn.style.left = (l.x * window.innerWidth - w / 2) + 'px';
+    btn.style.top = (l.y * window.innerHeight - w / 2) + 'px';
+  }
+
+  private collectLayout(): TouchLayout {
+    const out: TouchLayout = {};
+    for (const id of Object.keys(this.touchBtns)) {
+      const r = this.touchBtns[id].getBoundingClientRect();
+      out[id] = {
+        x: (r.left + r.width / 2) / window.innerWidth,
+        y: (r.top + r.height / 2) / window.innerHeight,
+        scale: r.width / 62,
+      };
+    }
+    return out;
+  }
+
+  toggleEditMode() {
+    this.editMode = !this.editMode;
+    if (this.editBar) this.editBar.classList.toggle('hv-hidden', !this.editMode);
+    for (const id of Object.keys(this.touchBtns)) {
+      this.touchBtns[id].classList.toggle('hv-editing', this.editMode);
+      if (!this.editMode) this.touchBtns[id].classList.remove('hv-sel');
+    }
+    if (this.editMode) {
+      this.selectedBtn = null;
+      this.stickBase.classList.add('hv-hidden');
+      this.stickNub.classList.add('hv-hidden');
+      this.lookZoneEl.style.pointerEvents = 'none';
+      if (this.editSlider) this.editSlider.value = '1';
+    } else {
+      this.selectedBtn = null;
+      this.lookZoneEl.style.pointerEvents = '';
+    }
+  }
+
+  private selectTouchBtn(btn: HTMLButtonElement) {
+    if (this.selectedBtn && this.selectedBtn !== btn) this.selectedBtn.classList.remove('hv-sel');
+    this.selectedBtn = btn;
+    btn.classList.add('hv-sel');
+    if (this.editSlider) this.editSlider.value = String(Math.round((btn.getBoundingClientRect().width / 62) * 100) / 100);
+  }
+
+  private buildEditBar() {
+    const bar = document.createElement('div');
+    bar.id = 'hv-editbar';
+    bar.classList.add('hv-hidden');
+    const hint = document.createElement('span');
+    hint.textContent = 'EDITING — drag buttons, slider = size, then SAVE';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.id = 'hv-edit-size';
+    slider.min = '0.7'; slider.max = '1.6'; slider.step = '0.05'; slider.value = '1';
+    slider.setAttribute('aria-label', 'Selected button size');
+    slider.oninput = () => {
+      const b = this.selectedBtn;
+      if (!b) return;
+      const v = parseFloat(slider.value);
+      const r = b.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const w = 62 * v;
+      b.style.right = 'auto'; b.style.bottom = 'auto';
+      b.style.width = w + 'px'; b.style.height = w + 'px';
+      b.style.left = Math.min(Math.max(cx - w / 2, 0), window.innerWidth - w) + 'px';
+      b.style.top = Math.min(Math.max(cy - w / 2, 0), window.innerHeight - w) + 'px';
+    };
+    const bSave = mkBtn('Save', () => {
+      const l = this.collectLayout();
+      this.layout = l;
+      saveTouchLayout(l);
+      this.toggleEditMode();
+    });
+    const bReset = mkBtn('Reset', () => {
+      clearTouchLayout();
+      this.layout = {};
+      for (const id of Object.keys(this.touchBtns)) {
+        this.touchBtns[id].style.cssText = this.touchDefaults[id] || '';
+        this.touchBtns[id].classList.remove('hv-sel');
+      }
+      this.selectedBtn = null;
+      slider.value = '1';
+    });
+    const bDone = mkBtn('Done', () => this.toggleEditMode());
+    for (const b of [bSave, bReset, bDone]) b.classList.add('hv-ebtn');
+    bar.append(hint, slider, bSave, bReset, bDone);
+    this.touchWrap.appendChild(bar);
+    this.editBar = bar;
+    this.editSlider = slider;
+  }
+
   private bindTouch(settings: Settings) {
     this.applyTouchSetting(settings);
     // joystick
@@ -671,6 +1276,7 @@ export class UI {
     zoneL.style.cssText = 'left:0;bottom:0;width:45%;height:70%;';
     zoneL.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      if (this.editMode) return;
       const t = e.changedTouches[0];
       if (stickId >= 0) return;
       stickId = t.identifier;
@@ -684,6 +1290,7 @@ export class UI {
     }, { passive: false });
     zoneL.addEventListener('touchmove', (e) => {
       e.preventDefault();
+      if (this.editMode) return;
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier !== stickId) continue;
         let dx = t.clientX - stickCenter.x, dy = t.clientY - stickCenter.y;
@@ -710,10 +1317,12 @@ export class UI {
     // look zone
     const lookZone = document.createElement('div');
     lookZone.id = 'hv-lookzone';
+    this.lookZoneEl = lookZone;
     let lookId = -1;
     const last = { x: 0, y: 0 };
     lookZone.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      if (this.editMode) return;
       const t = e.changedTouches[0];
       if (lookId >= 0) return;
       lookId = t.identifier;
@@ -721,6 +1330,7 @@ export class UI {
     }, { passive: false });
     lookZone.addEventListener('touchmove', (e) => {
       e.preventDefault();
+      if (this.editMode) return;
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier !== lookId) continue;
         this.input.touchLook(t.clientX - last.x, t.clientY - last.y);
@@ -733,57 +1343,109 @@ export class UI {
     lookZone.addEventListener('touchend', lookEnd);
     lookZone.addEventListener('touchcancel', lookEnd);
     this.touchWrap.appendChild(lookZone);
-    // buttons
-    const mkTBtn = (label: string, style: string, onDown: () => void, onUp?: () => void, toggle?: () => boolean) => {
+    // buttons: (id, icon, style, onDown, onUp?, toggle?) — icons via iconSvg, layout persisted
+    const mkTBtn = (id: string, icon: string, label: string, style: string, onDown: () => void, onUp?: () => void, toggle?: () => boolean) => {
       const b = document.createElement('button');
+      b.id = 'hv-tb-' + id;
       b.className = 'hv-tbtn';
-      b.textContent = label;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.innerHTML = `<span class="hv-tico">${iconSvg(icon, 26)}</span>`;
+      this.touchDefaults[id] = style;
       b.setAttribute('style', style);
-      b.addEventListener('touchstart', (e) => {
-        e.preventDefault();
+      const down = (e?: Event) => {
+        if (this.editMode) { e?.preventDefault(); return; } // edit mode: no game actions
         b.classList.add('on');
         onDown();
         if (toggle && !toggle()) b.classList.remove('on');
-      }, { passive: false });
-      b.addEventListener('touchend', (e) => {
-        e.preventDefault();
+      };
+      const up = (e?: Event) => {
+        if (this.editMode) { e?.preventDefault(); return; }
         if (!toggle) b.classList.remove('on');
         if (onUp) onUp();
-      }, { passive: false });
+      };
+      b.addEventListener('touchstart', (e) => { e.preventDefault(); down(); }, { passive: false });
+      b.addEventListener('touchend', (e) => { e.preventDefault(); up(); }, { passive: false });
+      // pointer-event dragging (edit mode only; works for touch + mouse)
+      let dragging = false;
+      let dragOff = { x: 0, y: 0 };
+      b.addEventListener('pointerdown', (e) => {
+        if (!this.editMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectTouchBtn(b);
+        try { b.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        const r = b.getBoundingClientRect();
+        dragOff = { x: e.clientX - r.left, y: e.clientY - r.top };
+        b.style.right = 'auto';
+        b.style.bottom = 'auto';
+        dragging = true;
+      });
+      b.addEventListener('pointermove', (e) => {
+        if (!dragging || !this.editMode) return;
+        e.preventDefault();
+        const w = b.getBoundingClientRect().width;
+        b.style.left = Math.min(Math.max(e.clientX - dragOff.x, 0), window.innerWidth - w) + 'px';
+        b.style.top = Math.min(Math.max(e.clientY - dragOff.y, 0), window.innerHeight - w) + 'px';
+      });
+      const endDrag = () => { dragging = false; };
+      b.addEventListener('pointerup', endDrag);
+      b.addEventListener('pointercancel', endDrag);
+      this.applyLayoutFor(b, id);
+      this.touchBtns[id] = b;
       this.touchWrap.appendChild(b);
       return b;
     };
-    const px = (v: string) => v;
-    mkTBtn('ATK', 'right:22px;bottom:86px;', () => this.input.setButton('attack', true), () => this.input.setButton('attack', false));
-    mkTBtn('USE', 'right:100px;bottom:26px;', () => this.input.setButton('interact', true), () => this.input.setButton('interact', false));
-    mkTBtn('RLD', 'right:24px;bottom:168px;', () => this.input.setButton('reload', true), () => this.input.setButton('reload', false));
-    mkTBtn('TORCH', 'left:150px;top:18px;', () => this.input.setButton('flash', true));
-    const crouchBtn = mkTBtn('CROUCH', 'left:20px;top:18px;', () => { /* toggled */ }, undefined, () => {
+    mkTBtn('attack', 'attack', 'Attack', 'right:22px;bottom:86px;',
+      () => this.input.setButton('attack', true), () => this.input.setButton('attack', false));
+    mkTBtn('interact', 'interact', 'Interact', 'right:100px;bottom:26px;',
+      () => this.input.setButton('interact', true), () => this.input.setButton('interact', false));
+    mkTBtn('reload', 'reload', 'Reload', 'right:24px;bottom:168px;',
+      () => this.input.setButton('reload', true), () => this.input.setButton('reload', false));
+    mkTBtn('flash', 'flash', 'Torch', 'left:150px;top:18px;',
+      () => this.input.setButton('flash', true));
+    mkTBtn('crouch', 'crouch', 'Crouch', 'left:20px;top:18px;', () => { /* toggled */ }, undefined, () => {
       this.crouchToggle = !this.crouchToggle;
       this.input.buttons['crouch'] = this.crouchToggle;
       return this.crouchToggle;
     });
-    crouchBtn.id = 'hv-crouch-btn';
-    const sprintBtn = mkTBtn('RUN', 'left:150px;top:88px;', () => { /* toggled */ }, undefined, () => {
+    mkTBtn('sprint', 'run', 'Sprint', 'left:150px;top:88px;', () => { /* toggled */ }, undefined, () => {
       this.sprintToggle = !this.sprintToggle;
       this.input.buttons['sprint'] = this.sprintToggle;
       return this.sprintToggle;
     });
-    sprintBtn.id = 'hv-sprint-btn';
-    mkTBtn('CAM', 'left:20px;top:88px;', () => this.input.setButton('cam', true));
-    mkTBtn('BOMB', 'right:100px;bottom:110px;', () => this.input.setButton('grenade', true));
-    mkTBtn('HEAL', 'right:22px;bottom:250px;', () => this.input.setButton('heal', true));
-    mkTBtn('MENU', 'right:16px;top:14px;width:44px;height:36px;border-radius:4px;', () => this.input.setButton('pause', true));
+    mkTBtn('cam', 'cam', 'Camera view', 'left:20px;top:88px;',
+      () => this.input.setButton('cam', true));
+    mkTBtn('grenade', 'grenade', 'Noise grenade', 'right:100px;bottom:110px;',
+      () => this.input.setButton('grenade', true));
+    mkTBtn('heal', 'heal', 'Heal', 'right:22px;bottom:250px;',
+      () => this.input.setButton('heal', true));
+    mkTBtn('pause', 'pause', 'Menu', 'right:16px;top:14px;width:44px;height:36px;border-radius:4px;',
+      () => this.input.setButton('pause', true));
+    mkTBtn('throw', 'throw', 'Throw bottle / brick', 'right:178px;bottom:26px;',
+      () => this.input.setButton('throw', true));
+    mkTBtn('map', 'map', 'Map', 'right:100px;top:80px;',
+      () => this.cb.onToggleOverlay?.('map'));
+    mkTBtn('quest', 'quest', 'Journal', 'right:100px;top:18px;',
+      () => this.cb.onToggleOverlay?.('quest'));
+    mkTBtn('radio', 'radio', 'Hand radio', 'left:20px;top:158px;',
+      () => this.cb.onToggleOverlay?.('radio'));
+    mkTBtn('dynamo', 'dynamo', 'Hand dynamo', 'right:24px;bottom:332px;',
+      () => this.input.setButton('dynamo', true), () => this.input.setButton('dynamo', false));
+    mkTBtn('breath', 'breath', 'Hold breath', 'right:100px;bottom:194px;',
+      () => this.input.setButton('breath', true), () => this.input.setButton('breath', false));
+    mkTBtn('swap', 'swap', 'Swap weapon', 'right:178px;bottom:110px;',
+      () => this.cb.onCycleWeapon?.());
+    mkTBtn('edit', 'edit', 'Edit button layout', 'right:70px;top:14px;width:44px;height:36px;border-radius:4px;',
+      () => this.toggleEditMode());
   }
   resetSprintToggle() {
     this.sprintToggle = false;
     this.crouchToggle = false;
     this.input.buttons['sprint'] = false;
     this.input.buttons['crouch'] = false;
-    const b = document.getElementById('hv-sprint-btn');
-    if (b) b.classList.remove('on');
-    const c = document.getElementById('hv-crouch-btn');
-    if (c) c.classList.remove('on');
+    this.touchBtns['sprint']?.classList.remove('on');
+    this.touchBtns['crouch']?.classList.remove('on');
   }
 }
 
@@ -834,6 +1496,9 @@ function mkCheck(val: boolean, onChange: (v: boolean) => void): HTMLInputElement
   c.style.accentColor = '#8f1d1d';
   c.onchange = () => onChange(c.checked);
   return c;
+}
+function stChip(icon: string, color: string, label: string, secs: string): string {
+  return `<span class="hv-st" style="color:${color}">${iconSvg(icon, 18)}${label ? `<b>${label}</b>` : ''}<b>${secs}</b></span>`;
 }
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

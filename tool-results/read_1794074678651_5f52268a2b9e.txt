@@ -1,0 +1,978 @@
+     1→// HOLLOW VALE — main orchestrator: game states, loop, combat, networking, saves
+     2→import * as THREE from 'three';
+     3→import {
+     4→  AudioEngine, Input, loadSettings, saveSettings, loadSPProgress, saveSPProgress, clearSPProgress,
+     5→  clamp, type Settings,
+     6→} from './core';
+     7→import { buildWorld, resolveCollisions, type WorldRefs, type Interactable as InteractableEntry } from './world';
+     8→import { Player, WEAPONS, type HitTarget, type WeaponId } from './player';
+     9→import { Shepherd, Husk, HUSK_SPAWNS, setHuskScene } from './monster';
+    10→import { Quests, NOTES, type NoteDef } from './quests';
+    11→import { UI } from './ui';
+    12→import { NetClient, type Snapshot } from './net';
+    13→
+    14→type GameState = 'menu' | 'loading' | 'playing' | 'paused' | 'dead' | 'note' | 'win';
+    15→type Mode = 'sp' | 'coop' | 'versus';
+    16→
+    17→const TIPS = [
+    18→  'they hear everything',
+    19→  'crouch to move in silence',
+    20→  'the torch is a beacon — and a comfort',
+    21→  'gunshots buy seconds, not safety',
+    22→  'three flames, three calls',
+    23→  'the bell remembers who drowned it',
+    24→];
+    25→
+    26→interface Grenade { mesh: THREE.Mesh; vel: THREE.Vector3; t: number }
+    27→
+    28→class Game {
+    29→  private container: HTMLElement;
+    30→  private renderer: THREE.WebGLRenderer;
+    31→  private scene = new THREE.Scene();
+    32→  private settings: Settings;
+    33→  private audio = new AudioEngine();
+    34→  private input = new Input();
+    35→  private ui!: UI;
+    36→  private net = new NetClient();
+    37→  private world: WorldRefs | null = null;
+    38→  private player: Player | null = null;
+    39→  private shepherd: Shepherd | null = null;
+    40→  private husks: Husk[] = [];
+    41→  private quests: Quests | null = null;
+    42→  private grenades: Grenade[] = [];
+    43→  private halluc: THREE.Mesh | null = null;
+    44→  private hallucT = 0;
+    45→  private whisperT = 8;
+    46→
+    47→  state: GameState = 'menu';
+    48→  private mode: Mode = 'sp';
+    49→  private camMode: 'first' | 'third' = 'third';
+    50→  private timeLeft = 720;
+    51→  private sendT = 0;
+    52→  private playTime = 0;
+    53→  private monsterHp = 500;
+    54→  private netPlayerId = 'p0';
+    55→  private isHost = false;
+    56→  private lastStageRage = -1;
+    57→  private downedBleed = 0;
+    58→  private respawnTimer = -1;
+    59→  private escapedSent = false;
+    60→  private gameEnded = false;
+    61→
+    62→  constructor(container: HTMLElement) {
+    63→    this.container = container;
+    64→    this.settings = loadSettings();
+    65→    this.camMode = this.settings.camMode;
+    66→    this.renderer = new THREE.WebGLRenderer({ antialias: this.settings.quality !== 'low', powerPreference: 'high-performance' });
+    67→    this.applyQuality();
+    68→    container.appendChild(this.renderer.domElement);
+    69→    this.scene.background = new THREE.Color(0x04060c);
+    70→    this.scene.fog = new THREE.FogExp2(0x04060c, 0.032);
+    71→    this.input.attach(this.renderer.domElement);
+    72→    this.net.setScene(this.scene);
+    73→    setHuskScene(this.scene);
+    74→
+    75→    this.ui = new UI(container, this.input, this.settings, {
+    76→      onStartSP: (cont) => this.startSP(cont),
+    77→      onCreateRoom: (name, mode) => this.createRoom(name, mode),
+    78→      onJoinRoom: (name, code) => this.joinRoom(name, code),
+    79→      onStartGame: () => this.net.start(),
+    80→      onLeaveRoom: () => this.net.leave(),
+    81→      onRespawn: () => this.respawn(),
+    82→      onQuitToMenu: () => this.quitToMenu(),
+    83→      onResume: () => this.resume(),
+    84→      onSettingsChanged: (s) => this.applySettings(s),
+    85→    });
+    86→    this.ui.onSprintToggle = () => { /* sprint handled via input.buttons */ };
+    87→
+    88→    this.input.onKeyExtra = (code) => this.onKey(code);
+    89→    window.addEventListener('resize', () => this.resize());
+    90→    document.addEventListener('pointerlockchange', () => {
+    91→      if (!document.pointerLockElement && this.state === 'playing' && !this.isTouch()) this.pause();
+    92→    });
+    93→    window.addEventListener('blur', () => { if (this.state === 'playing') this.pause(); });
+    94→
+    95→    this.renderer.domElement.addEventListener('click', () => {
+    96→      this.audio.ensure();
+    97→      if (this.state === 'playing' && !this.isTouch()) this.input.requestLock();
+    98→    });
+    99→
+   100→    this.resize();
+   101→    this.loop();
+   102→  }
+   103→
+   104→  /* ---------------- helpers ---------------- */
+   105→  private isTouch() { return matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; }
+   106→
+   107→  private applyQuality() {
+   108→    const q = this.settings.quality;
+   109→    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'low' ? 1 : q === 'medium' ? 1.35 : 2));
+   110→    this.renderer.shadowMap.enabled = q === 'high';
+   111→    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+   112→    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+   113→    this.renderer.toneMappingExposure = 1.05;
+   114→    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+   115→    this.resize();
+   116→  }
+   117→
+   118→  private resize() {
+   119→    const w = window.innerWidth, h = window.innerHeight;
+   120→    this.renderer.setSize(w, h);
+   121→    if (this.player) {
+   122→      this.player.camera.aspect = w / h;
+   123→      this.player.camera.updateProjectionMatrix();
+   124→    }
+   125→  }
+   126→
+   127→  private applySettings(s: Settings) {
+   128→    const qChanged = s.quality !== this.settings.quality;
+   129→    this.settings = s;
+   130→    saveSettings(s);
+   131→    this.audio.setVolume(s.volume);
+   132→    this.camMode = s.camMode;
+   133→    this.ui.refreshTouch(s);
+   134→    if (qChanged) this.applyQuality();
+   135→  }
+   136→
+   137→  private onKey(code: string) {
+   138→    if (code === 'T_pause' && this.state === 'playing') { this.pause(); return; }
+   139→    if (this.state === 'playing' && this.player) {
+   140→      switch (code) {
+   141→        case 'KeyE': case 'T_interact': this.tryInteract(); break;
+   142→        case 'KeyR': case 'T_reload': if (this.player) { this.player.reload(this.audio); } break;
+   143→        case 'KeyF': case 'T_flash': this.player.toggleFlashlight(this.audio); break;
+   144→        case 'KeyQ': case 'T_grenade': this.throwGrenade(); break;
+   145→        case 'KeyH': case 'T_heal': this.autoHeal(); break;
+   146→        case 'KeyV': case 'T_cam': this.camMode = this.camMode === 'first' ? 'third' : 'first'; break;
+   147→        case 'Digit1': this.switchWeapon('knife'); break;
+   148→        case 'Digit2': this.switchWeapon('pistol'); break;
+   149→        case 'Digit3': this.switchWeapon('rifle'); break;
+   150→      }
+   151→    }
+   152→  }
+   153→
+   154→  private switchWeapon(w: WeaponId) {
+   155→    if (!this.player || !this.player.hasWeapon(w)) return;
+   156→    if (this.player.current === w) return;
+   157→    this.player.current = w;
+   158→    this.player.reloadT = 0;
+   159→    this.audio.play('click', 0.4);
+   160→  }
+   161→
+   162→  /* ---------------- menu / start ---------------- */
+   163→  private async startSP(cont: boolean) {
+   164→    this.audio.ensure();
+   165→    this.mode = 'sp';
+   166→    this.isHost = true;
+   167→    this.ui.show('loading');
+   168→    this.ui.loading(0.05, TIPS[Math.floor(Math.random() * TIPS.length)]);
+   169→    await this.buildGame();
+   170→    const save = cont ? loadSPProgress() : null;
+   171→    if (cont && save) {
+   172→      this.player!.pos.set(save.pos?.x ?? 0, 0, save.pos?.z ?? 52);
+   173→      this.player!.inv = { ...this.player!.inv, ...save.inventory };
+   174→      this.player!.weapons = (save.weapons.filter(w => w === 'knife' || w === 'pistol' || w === 'rifle')) as WeaponId[];
+   175→      if (this.player!.weapons.length === 0) this.player!.weapons = ['knife'];
+   176→      this.quests!.restore({ ...save.flags, notesRead: save.notes } as never);
+   177→      this.playTime = save.playTime || 0;
+   178→      this.ui.message('Welcome back to Hollow Vale', true);
+   179→    } else {
+   180→      clearSPProgress();
+   181→      this.player!.pos.set(0, 0, 52);
+   182→      this.ui.subtitle('Hollow Vale, 1897. The village answered a bell that never rang...', 6);
+   183→    }
+   184→    this.beginPlay();
+   185→  }
+   186→
+   187→  private async createRoom(name: string, mode: 'coop' | 'versus') {
+   188→    this.audio.ensure();
+   189→    this.ui.mpStatus('Connecting to the night...');
+   190→    try {
+   191→      await this.net.connect(this.settings);
+   192→      this.net.create(name, mode);
+   193→      this.ui.mpStatus('');
+   194→    } catch {
+   195→      this.ui.mpStatus('Cannot reach the server. Check the address in Settings.');
+   196→    }
+   197→  }
+   198→  private async joinRoom(name: string, code: string) {
+   199→    this.audio.ensure();
+   200→    if (!code) { this.ui.mpStatus('Enter a room code.'); return; }
+   201→    this.ui.mpStatus('Knocking on the door...');
+   202→    try {
+   203→      await this.net.connect(this.settings);
+   204→      this.net.join(name, code);
+   205→    } catch {
+   206→      this.ui.mpStatus('Cannot reach the server. Check the address in Settings.');
+   207→    }
+   208→  }
+   209→
+   210→  private async buildGame() {
+   211→    // dispose previous
+   212→    if (this.world) {
+   213→      this.scene.remove(this.world.root);
+   214→      this.world = null;
+   215→    }
+   216→    for (const h of this.husks) this.scene.remove(h.mesh());
+   217→    this.husks = [];
+   218→    if (this.shepherd) { this.scene.remove(this.shepherd.mesh()); this.shepherd = null; }
+   219→    for (const g of this.grenades) this.scene.remove(g.mesh);
+   220→    this.grenades = [];
+   221→    this.net.clearRemotes();
+   222→
+   223→    this.ui.loading(0.3, 'raising the houses...');
+   224→    await frame();
+   225→    this.world = buildWorld(this.scene, this.settings.quality);
+   226→    this.ui.loading(0.62, 'waking the dead...');
+   227→    await frame();
+   228→
+   229→    this.player = new Player(this.scene);
+   230→    this.player.id = this.netPlayerId;
+   231→    this.player.name = this.settings.playerName;
+   232→    this.player.onNoise = (pos, r) => {
+   233→      if (this.mode === 'sp' || (this.mode === 'coop' && this.isHost)) {
+   234→        this.shepherd?.hear(pos, r);
+   235→        for (const h of this.husks) h.hear(pos, r);
+   236→      } else {
+   237→        this.net.sendNoise(pos.x, pos.z, r);
+   238→      }
+   239→    };
+   240→    this.player.onDamage = () => {
+   241→      this.ui.flashDamage();
+   242→      this.audio.play('flesh', 0.8);
+   243→      if (this.player && this.player.downed) {
+   244→        this.downedBleed = 60;
+   245→        this.ui.message(this.mode === 'versus' ? 'You are dying...' : 'You are down — crawl to a friend', true);
+   246→      }
+   247→    };
+   248→
+   249→    this.shepherd = new Shepherd(this.scene);
+   250→    this.shepherd.controlled = false;
+   251→
+   252→    for (const p of HUSK_SPAWNS) this.husks.push(new Husk({ pos: p }));
+   253→
+   254→    this.ui.loading(0.85, 'binding the curse...');
+   255→    await frame();
+   256→    const hooks = {
+   257→      message: (t: string, big?: boolean) => this.ui.message(t, big),
+   258→      subtitle: (t: string, d?: number) => this.ui.subtitle(t, d),
+   259→      onNoise: (pos: THREE.Vector3, r: number) => {
+   260→        if (this.mode === 'sp' || (this.mode === 'coop' && this.isHost)) {
+   261→          this.shepherd?.hear(pos, r);
+   262→          for (const h of this.husks) h.hear(pos, r);
+   263→        } else this.net.sendNoise(pos.x, pos.z, r);
+   264→      },
+   265→      onStage: (stage: number) => this.onStage(stage),
+   266→      onNoteRead: (note: NoteDef) => { this.pendingNote = note; },
+   267→      onPickup: (id: string, type: string) => this.onPickup(id, type),
+   268→      netEmit: (event: string, data: Record<string, unknown>) => this.questEmit(event, data),
+   269→      isNet: () => this.mode !== 'sp',
+   270→    };
+   271→    this.quests = new Quests(this.world, hooks);
+   272→    this.quests.localPlayerRef = this.player;
+   273→    this.ui.loading(1, 'ready...');
+   274→    await frame();
+   275→  }
+   276→  private pendingNote: NoteDef | null = null;
+   277→
+   278→  private beginPlay() {
+   279→    this.state = 'playing';
+   280→    this.gameEnded = false;
+   281→    this.escapedSent = false;
+   282→    this.ui.show(null);
+   283→    this.ui.setHUDEnabled(true);
+   284→    this.ui.fadeIn();
+   285→    if (!this.isTouch()) setTimeout(() => this.input.requestLock(), 60);
+   286→    this.timeLeft = 720;
+   287→    if (this.mode === 'versus' && this.net.isShepherd) {
+   288→      // player is the monster
+   289→      this.shepherd!.spawn(new THREE.Vector3(0, 0, -40));
+   290→      this.shepherd!.controlled = true;
+   291→      this.shepherd!.active = true;
+   292→      this.shepherd!.group.visible = true;
+   293→      this.camMode = 'third';
+   294→      this.player!.pos.set(0, 0, -36);
+   295→      this.ui.message('You are THE SHEPHERD. Ring the bell one last time.', true);
+   296→    } else if (this.mode === 'versus') {
+   297→      this.shepherd!.despawn();
+   298→      this.player!.pos.set(0, 0, 52);
+   299→      this.ui.message('Survive. The Shepherd walks tonight.', true);
+   300→    } else {
+   301→      this.player!.pos.y = 0;
+   302→      if (!this.world!.doors.get('church')!.locked) { /* keep */ }
+   303→      // sp/coop start with shepherd dormant until stage 1
+   304→      this.shepherd!.despawn();
+   305→    }
+   306→  }
+   307→
+   308→  /* ---------------- net wiring ---------------- */
+   309→  wireNet() {
+   310→    this.net.onLobby = (room) => { this.ui.show('lobby'); this.ui.lobbyUpdate({ ...room, isHost: room.players[0]?.isHost || false }); };
+   311→    this.net.onError = (msg) => this.ui.mpStatus(msg);
+   312→    this.net.onStart = async (room) => {
+   313→      this.mode = room.mode === 'versus' ? 'versus' : 'coop';
+   314→      this.isHost = room.players[0]?.isHost || false;
+   315→      this.netPlayerId = this.net.socket?.id || 'p' + Math.floor(Math.random() * 999);
+   316→      this.ui.show('loading');
+   317→      this.ui.loading(0.2, 'summoning the others...');
+   318→      await this.buildGame();
+   319→      if (this.mode === 'coop') this.isHost = true; // first client simulates AI
+   320→      if (this.mode === 'versus') this.isHost = false;
+   321→      this.beginPlay();
+   322→    };
+   323→    this.net.onSnap = (snap) => this.applySnap(snap);
+   324→    this.net.onQuestEvent = (event, data) => {
+   325→      if (!this.quests) return;
+   326→      this.quests.applyRemote(event, data);
+   327→      if (event === 'give' && this.player) this.quests.giveToPlayer(this.player, data.items as Record<string, number>);
+   328→      if (event === 'craft') {
+   329→        if (data.what === 'rifle') this.ui.message("Someone crafted the Hunter's Rifle");
+   330→        if (data.what === 'remedy') this.ui.message("The remedy is brewed");
+   331→      }
+   332→    };
+   333→    this.net.onGameEvent = (event, data) => this.applyGameEvent(event, data);
+   334→    this.net.onDisconnected = () => {
+   335→      if (this.state === 'playing') {
+   336→        this.ui.message('Connection lost — the night swallows you', true);
+   337→        this.quitToMenu();
+   338→      }
+   339→    };
+   340→  }
+   341→
+   342→  private applySnap(snap: Snapshot) {
+   343→    if (!this.player) return;
+   344→    this.net.applySnapshot(snap);
+   345→    if (snap.monster && this.shepherd) {
+   346→      this.shepherd.netPos.set(snap.monster.x, 0, snap.monster.z);
+   347→      this.shepherd.netYaw = snap.monster.yaw;
+   348→      this.shepherd.group.visible = true;
+   349→      this.shepherd.active = true;
+   350→      this.shepherd.state = snap.monster.state as never;
+   351→    }
+   352→    if (typeof snap.time === 'number') this.timeLeft = snap.time;
+   353→  }
+   354→
+   355→  private applyGameEvent(event: string, data: Record<string, unknown>) {
+   356→    switch (event) {
+   357→      case 'mhit': {
+   358→        if (data.target === this.netPlayerId && this.player && !this.player.downed) {
+   359→          this.monsterAttackLocal(data.dmg as number);
+   360→        }
+   361→        break;
+   362→      }
+   363→      case 'revive': {
+   364→        if (data.target === this.netPlayerId && this.player) {
+   365→          this.player.downed = false;
+   366→          this.player.dead = false;
+   367→          this.player.health = 40;
+   368→          this.ui.message('Your friend pulled you back from the dark', true);
+   369→        }
+   370→        break;
+   371→      }
+   372→      case 'died': {
+   373→        this.ui.message(`${data.name || 'A friend'} was taken`);
+   374→        break;
+   375→      }
+   376→      case 'escaped': {
+   377→        if (!this.gameEnded) this.endGame(true, 'A survivor slipped through the gate.');
+   378→        break;
+   379→      }
+   380→      case 'gameover': {
+   381→        if (!this.gameEnded) {
+   382→          if (data.winner === 'monster') this.endGame(false, (data.text as string) || 'The Shepherd claimed the night.');
+   383→        }
+   384→        break;
+   385→      }
+   386→      case 'noise': {
+   387→        if (this.mode === 'coop' && this.isHost && this.shepherd) {
+   388→          this.shepherd.hear(new THREE.Vector3(data.x as number, 0, data.z as number), data.radius as number);
+   389→          for (const h of this.husks) h.hear(new THREE.Vector3(data.x as number, 0, data.z as number), data.radius as number);
+   390→        }
+   391→        break;
+   392→      }
+   393→    }
+   394→  }
+   395→
+   396→  /* ---------------- quest events ---------------- */
+   397→  private questEmit(event: string, data: Record<string, unknown>) {
+   398→    switch (event) {
+   399→      case 'give': {
+   400→        if (this.player && this.quests) this.quests.giveToPlayer(this.player, data.items as Record<string, number>);
+   401→        this.net.sendQuest('give', data);
+   402→        break;
+   403→      }
+   404→      case 'craft': {
+   405→        if (data.what === 'rifle' && this.player) {
+   406→          this.player.giveWeapon('rifle');
+   407→          this.player.inv.rifle_stock = 0;
+   408→          this.player.inv.rifle_barrel = 0;
+   409→          this.player.inv.ammo_rifle = (this.player.inv.ammo_rifle || 0) + 6;
+   410→          this.switchWeapon('rifle');
+   411→        }
+   412→        this.net.sendQuest('craft', data);
+   413→        break;
+   414→      }
+   415→      case 'pickup': {
+   416→        this.net.sendQuest('pickup', data);
+   417→        break;
+   418→      }
+   419→      default:
+   420→        this.net.sendQuest(event, data);
+   421→    }
+   422→  }
+   423→
+   424→  private onStage(stage: number) {
+   425→    if (this.mode === 'sp') {
+   426→      this.saveGame();
+   427→    }
+   428→    if (this.shepherd && (this.mode === 'sp' || (this.mode === 'coop' && this.isHost))) {
+   429→      if (stage >= 1 && !this.shepherd.active) {
+   430→        this.shepherd.spawn(new THREE.Vector3(24, 0, 30));
+   431→        this.ui.subtitle('Something answered. The lantern light drifts between the houses...', 6);
+   432→        this.audio.play('bell', 0.5);
+   433→      }
+   434→      this.shepherd.rage = clamp(stage * 0.14, 0, 0.85);
+   435→    }
+   436→    const chapterNames: Record<number, string> = {
+   437→      1: 'CHAPTER II — THE CHURCH OF THE BACKWARDS BELL',
+   438→      2: 'CHAPTER III — THREE FLAMES',
+   439→      3: 'CHAPTER IV — THE DROWNED AMULET',
+   440→      4: 'CHAPTER V — THE UNMAKING',
+   441→      5: 'CHAPTER VI — RUN FOR THE GATE',
+   442→    };
+   443→    if (chapterNames[stage]) this.ui.message(chapterNames[stage], true);
+   444→  }
+   445→
+   446→  private onPickup(id: string, type: string) {
+   447→    this.questEmit('pickup', { id });
+   448→    if (this.player && this.quests) {
+   449→      const amounts: Record<string, [string, number]> = {
+   450→        ammo_pistol: ['ammo_pistol', 6], ammo_rifle: ['ammo_rifle', 4], bandage: ['bandage', 1],
+   451→        pills: ['pills', 1], battery: ['battery', 1], grenade: ['grenade', 1], herb: ['herb', 1],
+   452→      };
+   453→      if (amounts[type]) {
+   454→        const [key, n] = amounts[type];
+   455→        this.player.inv[key] = (this.player.inv[key] || 0) + n;
+   456→        this.audio.play('pickup', 0.5);
+   457→      } else if (type === 'church_key' || type === 'iron_key') {
+   458→        this.player.inv[type] = 1;
+   459→        this.audio.play('pickup', 0.6);
+   460→      } else if (type === 'amulet') {
+   461→        this.player.inv.amulet = 1;
+   462→        this.audio.play('bell', 0.4);
+   463→      } else {
+   464→        this.audio.play('pickup', 0.4);
+   465→      }
+   466→    }
+   467→  }
+   468→
+   469→  /* ---------------- interactions ---------------- */
+   470→  private tryInteract() {
+   471→    if (!this.player || !this.world || !this.quests || this.player.downed) return;
+   472→    if (this.mode === 'versus' && this.net.isShepherd) return;
+   473→    const p = this.player.pos;
+   474→    let best: { it: InteractableEntry; d: number } | null = null;
+   475→    for (const it of this.world.interactables) {
+   476→      if (!it.enabled || it.used) continue;
+   477→      const d = Math.hypot(it.pos.x - p.x, it.pos.z - p.z);
+   478→      if (d < it.radius && (!best || d < best.d)) best = { it, d };
+   479→    }
+   480→    if (!best) return;
+   481→    // revive first (co-op)
+   482→    if (this.mode !== 'sp') {
+   483→      const downedRemote = this.net.remoteList().find(r => {
+   484→        const snapP = this.net.lastSnap?.players.find(pp => pp.id === r.id);
+   485→        return snapP?.downed && !snapP.dead;
+   486→      });
+   487→      if (downedRemote && Math.hypot(downedRemote.pos.x - p.x, downedRemote.pos.z - p.z) < 2.4) {
+   488→        this.net.sendGame('revive', { target: downedRemote.id });
+   489→        this.ui.message('Reviving...', false);
+   490→        return;
+   491→      }
+   492→    }
+   493→    this.audio.play('click', 0.3);
+   494→    best.it.onInteract(this.player);
+   495→  }
+   496→
+   497→  /* ---------------- combat ---------------- */
+   498→  private targets(): HitTarget[] {
+   499→    const out: HitTarget[] = [];
+   500→    if (!this.player) return out;
+   501→    if (this.shepherd && this.shepherd.active && !this.shepherd.controlled) {
+   502→      out.push({
+   503→        mesh: this.shepherd.mesh(),
+   504→        pos: () => new THREE.Vector3(this.shepherd!.pos.x, 1.55, this.shepherd!.pos.z),
+   505→        onHit: (dmg, heavy) => this.shepherd!.onHit(dmg, heavy, this.audio, this.player!.pos.clone(), this.player!.yaw),
+   506→      });
+   507→    }
+   508→    for (const h of this.husks) {
+   509→      if (h.dead) continue;
+   510→      out.push({ mesh: h.mesh(), pos: () => h.chest(), onHit: (dmg) => h.onHit(dmg) });
+   511→    }
+   512→    return out;
+   513→  }
+   514→
+   515→  private doAttack() {
+   516→    if (!this.player || this.state !== 'playing' || this.player.downed) return;
+   517→    if (this.mode === 'versus' && this.net.isShepherd) { this.shepherdAttack(); return; }
+   518→    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.player.camera.quaternion);
+   519→    const result = this.player.fire(this.audio, this.targets(), this.world?.occluders || [], camDir);
+   520→    if (result === 'fired' || result === 'melee') {
+   521→      // vs-mode: shooting the player-monster
+   522→      if (this.mode === 'versus' && this.shepherd && this.shepherd.active) {
+   523→        const d = this.shepherd.pos.distanceTo(this.player.pos);
+   524→        if (d < 40) {
+   525→          const dir = new THREE.Vector3().subVectors(this.shepherd.pos, this.player.pos).normalize();
+   526→          const fwd = camDir.clone();
+   527→          if (dir.dot(fwd) > 0.985) {
+   528→            this.net.sendGame('mdamage', { dmg: WEAPONS[this.player.current].dmg });
+   529→          }
+   530→        }
+   531→      }
+   532→    }
+   533→  }
+   534→
+   535→  private throwGrenade() {
+   536→    if (!this.player || this.player.downed) return;
+   537→    const g = this.player.throwGrenade(this.audio);
+   538→    if (!g) return;
+   539→    const mesh = new THREE.Mesh(
+   540→      new THREE.SphereGeometry(0.09, 8, 8),
+   541→      new THREE.MeshStandardMaterial({ color: 0xc46a3a, emissive: 0x602000, emissiveIntensity: 0.5 })
+   542→    );
+   543→    mesh.position.copy(g.pos);
+   544→    this.scene.add(mesh);
+   545→    this.grenades.push({ mesh, vel: g.vel, t: 0 });
+   546→  }
+   547→
+   548→  private autoHeal() {
+   549→    if (!this.player) return;
+   550→    if (this.player.health < 60 && (this.player.inv.bandage || 0) > 0) this.player.useItem('bandage', this.audio);
+   551→    else if ((this.player.inv.pills || 0) > 0) this.player.useItem('pills', this.audio);
+   552→    else if ((this.player.inv.bandage || 0) > 0) this.player.useItem('bandage', this.audio);
+   553→    else this.ui.message('Nothing left to ease the pain');
+   554→  }
+   555→
+   556→  /* ---------------- monster vs local ---------------- */
+   557→  private monsterAttackLocal(dmg: number) {
+   558→    if (!this.player || this.player.dead) return;
+   559→    this.audio.play('scare', 0.9);
+   560→    this.player.damage(dmg, true);
+   561→    // knockback
+   562→    if (this.shepherd) {
+   563→      const dir = new THREE.Vector3().subVectors(this.player.pos, this.shepherd.pos).normalize();
+   564→      this.player.pos.addScaledVector(dir, 2.4);
+   565→      resolveCollisions(this.player.pos, 0.42, this.world?.colliders || []);
+   566→    }
+   567→  }
+   568→
+   569→  private shepherdAttack() {
+   570→    // local player IS the shepherd (versus)
+   571→    if (!this.shepherd || !this.player) return;
+   572→    this.audio.play('knife', 0.6);
+   573→    for (const r of this.net.remoteList()) {
+   574→      const d = r.pos.distanceTo(this.shepherd.pos);
+   575→      if (d < 2.2) {
+   576→        this.net.sendGame('mhit', { target: r.id, dmg: 30 });
+   577→        this.audio.play('flesh', 0.8);
+   578→      }
+   579→    }
+   580→  }
+   581→
+   582→  /* ---------------- state ---------------- */
+   583→  private pause() {
+   584→    if (this.state !== 'playing') return;
+   585→    this.state = 'paused';
+   586→    this.ui.show('pause');
+   587→    this.input.exitLock();
+   588→    if (this.mode === 'sp') this.saveGame();
+   589→  }
+   590→  private resume() {
+   591→    this.state = 'playing';
+   592→    this.ui.show(null);
+   593→    if (!this.isTouch()) setTimeout(() => this.input.requestLock(), 50);
+   594→  }
+   595→
+   596→  private saveGame() {
+   597→    if (this.mode !== 'sp' || !this.player || !this.quests) return;
+   598→    saveSPProgress({
+   599→      chapter: this.quests.state.stage,
+   600→      inventory: { ...this.player.inv },
+   601→      weapons: [...this.player.weapons],
+   602→      notes: [...this.quests.state.notesRead],
+   603→      flags: { ...this.quests.state },
+   604→      playTime: this.playTime,
+   605→      pos: { x: this.player.pos.x, z: this.player.pos.z },
+   606→    });
+   607→  }
+   608→
+   609→  private quitToMenu() {
+   610→    this.saveGame();
+   611→    this.state = 'menu';
+   612→    this.mode = 'sp';
+   613→    this.ui.resetSprintToggle();
+   614→    this.ui.setHUDEnabled(false);
+   615→    this.ui.show('menu');
+   616→    this.net.leave();
+   617→    this.audio.danger = 0;
+   618→    this.audio.setGrowl(0);
+   619→    if (this.player) { this.scene.remove(this.player.camera); this.player = null; }
+   620→    if (this.shepherd) { this.scene.remove(this.shepherd.mesh()); this.shepherd = null; }
+   621→    for (const h of this.husks) this.scene.remove(h.mesh());
+   622→    this.husks = [];
+   623→    if (this.world) { this.scene.remove(this.world.root); this.world = null; }
+   624→    this.quests = null;
+   625→    // rebuild menu screen state
+   626→    location.reload();
+   627→  }
+   628→
+   629→  private respawn() {
+   630→    if (!this.player) return;
+   631→    this.player.downed = false;
+   632→    this.player.dead = false;
+   633→    this.player.health = 50;
+   634→    this.player.fear = 45;
+   635→    this.player.pos.set(0, 0, -20);
+   636→    this.state = 'playing';
+   637→    this.ui.show(null);
+   638→    this.respawnTimer = -1;
+   639→  }
+   640→
+   641→  private endGame(win: boolean, text: string) {
+   642→    if (this.gameEnded) return;
+   643→    this.gameEnded = true;
+   644→    this.state = 'win';
+   645→    this.audio.play(win ? 'win' : 'lose', 0.9);
+   646→    this.audio.setGrowl(0);
+   647→    this.input.exitLock();
+   648→    const stats = [
+   649→      `Time in the vale: ${Math.floor(this.playTime / 60)}m ${Math.floor(this.playTime % 60)}s`,
+   650→      `Notes found: ${this.quests?.state.notesRead.length ?? 0} / ${NOTES.length}`,
+   651→      `Chapter reached: ${this.quests?.state.stage ?? 0} / 6`,
+   652→      this.mode !== 'sp' ? `Survivors: ${this.net.lastSnap?.players.filter(p => !p.dead).length ?? '?'}` : '',
+   653→    ].filter(Boolean).join('<br>');
+   654→    if (win) this.ui.showWin(stats, text);
+   655→    else {
+   656→      const t = document.querySelector('#hv-death .hv-title');
+   657→      if (t) t.textContent = 'THE NIGHT WINS';
+   658→      const b = document.getElementById('hv-respawn-btn');
+   659→      if (b) b.classList.add('hv-hidden');
+   660→      this.ui.show('death');
+   661→      const sub = document.querySelector('#hv-death .hv-sub');
+   662→      if (sub) sub.textContent = text;
+   663→    }
+   664→  }
+   665→
+   666→  /* ---------------- main loop ---------------- */
+   667→  private loop = () => {
+   668→    requestAnimationFrame(this.loop);
+   669→    const now = performance.now();
+   670→    const rawDt = (now - this._last) / 1000;
+   671→    this._last = now;
+   672→    const dt = Math.min(0.1, rawDt);
+   673→    this.ui.update(dt);
+   674→    this.audio.update(dt);
+   675→    this.autoPerf(rawDt);
+   676→
+   677→    if (this.state === 'playing' && this.player && this.world && this.quests) {
+   678→      this.playTime += dt;
+   679→      this.step(dt);
+   680→    }
+   681→    if (this.player) {
+   682→      this.renderer.render(this.scene, this.player.camera);
+   683→    } else {
+   684→      // menu backdrop: render empty scene slowly rotating? keep last frame
+   685→      this.renderer.render(this.scene, this.menuCam);
+   686→    }
+   687→  };
+   688→  private _last = performance.now();
+   689→  private menuCam = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
+   690→  private perfEma = 60; private perfTier = 0; private perfT = 0;
+   691→
+   692→  private autoPerf(rawDt: number) {
+   693→    if (this.state !== 'playing') return;
+   694→    const fps = 1 / Math.max(rawDt, 0.001);
+   695→    this.perfEma = this.perfEma * 0.95 + fps * 0.05;
+   696→    this.perfT += rawDt;
+   697→    if (this.perfT < 4) return;
+   698→    this.perfT = 0;
+   699→    if (this.perfEma < 24 && this.perfTier < 2) {
+   700→      this.perfTier++;
+   701→      const pr = this.renderer.getPixelRatio();
+   702→      this.renderer.setPixelRatio(Math.max(0.66, pr - 0.35));
+   703→      this.renderer.shadowMap.enabled = false;
+   704→      if (this.perfTier === 2 && this.scene.fog instanceof THREE.FogExp2) this.scene.fog.density = 0.045;
+   705→      this.resize();
+   706→    }
+   707→  }
+   708→
+   709→  private step(dt: number) {
+   710→    const player = this.player!, world = this.world!, quests = this.quests!;
+   711→
+   712→    // darkness check: no flashlight and not near a lit lamp/brazier
+   713→    let nearLight = false;
+   714→    for (const l of world.lamps) {
+   715→      if (l.light.position.distanceTo(player.pos) < 9) { nearLight = true; break; }
+   716→    }
+   717→    if (!nearLight) for (const b of world.braziers) {
+   718→      if (b.lit && b.pos3.distanceTo(player.pos) < 8) { nearLight = true; break; }
+   719→    }
+   720→    const darkness = !player.flashlightOn && !nearLight;
+   721→
+   722→    // monster visible?
+   723→    let monsterVisible = false;
+   724→    if (this.shepherd && this.shepherd.active && this.shepherd.group.visible) {
+   725→      const d = this.shepherd.pos.distanceTo(player.pos);
+   726→      if (d < 40) {
+   727→        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(player.camera.quaternion);
+   728→        const to = new THREE.Vector3().subVectors(this.shepherd.headPos(), player.eyePos).normalize();
+   729→        if (dir.dot(to) > 0.5) monsterVisible = true;
+   730→      }
+   731→    }
+   732→
+   733→    const frozen = false;
+   734→    player.update(dt, this.input, world, this.audio, this.camMode, this.settings.sensitivity, this.settings.invertY, darkness, monsterVisible, frozen);
+   735→
+   736→    // attack (mouse/touch hold)
+   737→    if (this.input.buttons['attack'] && !this.isTouchHeld()) {
+   738→      // mouse: fire once per press
+   739→      if (!this._attackHeld) { this._attackHeld = true; this.doAttack(); }
+   740→    } else if (this.input.buttons['attack'] && this.isTouchHeld()) {
+   741→      if (player.fireCd <= 0) this.doAttack();
+   742→    } else this._attackHeld = false;
+   743→
+   744→    // interact prompt
+   745→    let prompt: string | null = null;
+   746→    const isMonsterPlayer = this.mode === 'versus' && this.net.isShepherd;
+   747→    if (!isMonsterPlayer) {
+   748→      for (const it of world.interactables) {
+   749→        if (!it.enabled || it.used) continue;
+   750→        const d = Math.hypot(it.pos.x - player.pos.x, it.pos.z - player.pos.z);
+   751→        if (d < it.radius) {
+   752→          const doorBehind = it.id.startsWith('door_');
+   753→          if (doorBehind) {
+   754→            const did = it.id.slice(5);
+   755→            const door = world.doors.get(did);
+   756→            if (door?.locked) prompt = 'E — Locked';
+   757→            else prompt = door?.open ? 'E — Close door' : 'E — Open door';
+   758→          } else prompt = 'E — ' + it.prompt;
+   759→          break;
+   760→        }
+   761→      }
+   762→    }
+   763→    // revive prompt
+   764→    if (this.mode !== 'sp') {
+   765→      for (const rp of this.net.remoteList()) {
+   766→        const snapP = this.net.lastSnap?.players.find(pp => pp.id === rp.id);
+   767→        if (snapP?.downed && !snapP.dead && Math.hypot(rp.pos.x - player.pos.x, rp.pos.z - player.pos.z) < 2.4) {
+   768→          prompt = 'HOLD E — Revive ' + snapP.name;
+   769→          break;
+   770→        }
+   771→      }
+   772→    }
+   773→    this.ui.prompt(prompt);
+   774→
+   775→    // downed handling
+   776→    if (player.downed && !player.dead) {
+   777→      this.downedBleed -= dt;
+   778→      if (this.downedBleed <= 0) {
+   779→        player.dead = true;
+   780→        player.downed = false;
+   781→        this.audio.play('lose', 0.8);
+   782→        if (this.mode === 'sp') {
+   783→          this.state = 'dead';
+   784→          this.ui.showDeath(true);
+   785→        } else if (this.mode === 'coop') {
+   786→          this.respawnTimer = 25;
+   787→          this.net.sendGame('died', { name: player.name });
+   788→          this.ui.showDeath(true);
+   789→          this.ui.message('You will rise at the church in 25s', true);
+   790→        } else {
+   791→          this.net.sendGame('died', { name: player.name });
+   792→          this.state = 'dead';
+   793→          this.ui.showDeath(false);
+   794→        }
+   795→      }
+   796→    }
+   797→    if (this.respawnTimer > 0 && this.state !== 'menu') {
+   798→      this.respawnTimer -= dt;
+   799→      if (this.respawnTimer <= 0 && this.mode === 'coop') {
+   800→        this.respawn();
+   801→        this.ui.message('The church floor accepts you back', false);
+   802→      }
+   803→    }
+   804→
+   805→    // shepherd sim (sp always; coop host; versus none)
+   806→    const playersForAI = [
+   807→      { pos: player.pos, crouching: player.crouching, sprinting: player.sprinting, flashlightOn: player.flashlightOn, downed: player.downed, dead: player.dead },
+   808→      ...this.net.remoteList().map(r => {
+   809→        const sp = this.net.lastSnap?.players.find(p => p.id === r.id);
+   810→        return { pos: r.pos, crouching: !!sp?.crouch, sprinting: !!sp?.moving && !sp?.crouch, flashlightOn: !!sp?.flash, downed: !!sp?.downed, dead: !!sp?.dead };
+   811→      }),
+   812→    ];
+   813→    if (this.shepherd) {
+   814→      const simulate = this.mode === 'sp' || (this.mode === 'coop' && this.isHost);
+   815→      if (simulate && this.shepherd.active) {
+   816→        this.shepherd.update(dt, world, playersForAI, this.audio, player.pos.clone(), player.yaw, (target) => {
+   817→          if (target === playersForAI[0]) this.monsterAttackLocal(40);
+   818→          else {
+   819→            // find which remote
+   820→            const idx = playersForAI.indexOf(target);
+   821→            const rp = this.net.remoteList()[idx - 1];
+   822→            if (rp) this.net.sendGame('mhit', { target: rp.id, dmg: 40 });
+   823→          }
+   824→        });
+   825→        this.net.sendMonster({ x: this.shepherd.pos.x, z: this.shepherd.pos.z, yaw: this.shepherd.group.rotation.y, state: this.shepherd.state });
+   826→      } else if (!simulate) {
+   827→        this.shepherd.update(dt, world, [], this.audio, player.pos.clone(), player.yaw, () => { /* noop */ });
+   828→      }
+   829→      // shepherd vs local player collision catch in versus (remote monster attacks via mhit)
+   830→    }
+   831→
+   832→    // husks
+   833→    for (const h of this.husks) {
+   834→      h.update(dt, world, playersForAI, this.audio, player.pos.clone(), player.yaw, (target, dmg) => {
+   835→        if (target === playersForAI[0]) this.monsterAttackLocal(dmg);
+   836→      });
+   837→    }
+   838→
+   839→    // grenades
+   840→    for (let i = this.grenades.length - 1; i >= 0; i--) {
+   841→      const g = this.grenades[i];
+   842→      g.t += dt;
+   843→      g.vel.y -= 12 * dt;
+   844→      g.mesh.position.addScaledVector(g.vel, dt);
+   845→      if (g.mesh.position.y < 0.08) { g.mesh.position.y = 0.08; g.vel.y *= -0.35; g.vel.x *= 0.7; g.vel.z *= 0.7; }
+   846→      resolveCollisions(g.mesh.position, 0.1, world.colliders);
+   847→      if (g.t > 1.6) {
+   848→        this.audio.play('bang', 1);
+   849→        this.player?.addShake(0.6, 0.3);
+   850→        const pos = g.mesh.position.clone();
+   851→        if (this.shepherd && this.shepherd.active && this.shepherd.pos.distanceTo(pos) < 13) this.shepherd.knockdown(6);
+   852→        for (const h of this.husks) if (!h.dead && h.pos.distanceTo(pos) < 6) h.onHit(100);
+   853→        this.shepherd?.hear(pos, 60);
+   854→        for (const h of this.husks) h.hear(pos, 30);
+   855→        if (this.mode !== 'sp') this.net.sendNoise(pos.x, pos.z, 60);
+   856→        this.scene.remove(g.mesh);
+   857→        this.grenades.splice(i, 1);
+   858→      }
+   859→    }
+   860→
+   861→    quests.update(dt);
+   862→
+   863→    // hallucinations at high fear
+   864→    if (player.fear > 82) {
+   865→      this.hallucT -= dt;
+   866→      if (this.hallucT <= 0) {
+   867→        this.hallucT = 6 + Math.random() * 8;
+   868→        this.spawnHallucination();
+   869→      }
+   870→    } else this.hallucT = 4;
+   871→    if (this.halluc) {
+   872→      this.hallucT -= dt;
+   873→      const m = this.halluc.material as THREE.MeshBasicMaterial;
+   874→      m.opacity = clamp(this.hallucT * 2, 0, 0.75);
+   875→      if (this.hallucT <= 0) { this.scene.remove(this.halluc); this.halluc = null; }
+   876→    }
+   877→
+   878→    // whispers
+   879→    this.whisperT -= dt;
+   880→    if (this.whisperT <= 0) {
+   881→      this.whisperT = 14 + Math.random() * 20;
+   882→      if (player.fear > 45 || (this.shepherd?.active && this.shepherd.pos.distanceTo(player.pos) < 26)) {
+   883→        this.audio.play('whisper', 0.5 + player.fear / 200);
+   884→      }
+   885→    }
+   886→
+   887→    // danger meter
+   888→    let danger = 0;
+   889→    if (this.shepherd?.active) {
+   890→      const d = this.shepherd.pos.distanceTo(player.pos);
+   891→      danger = clamp(1 - d / 30, 0, 1);
+   892→      if (this.shepherd.state === 'chase') danger = Math.max(danger, 0.75);
+   893→    }
+   894→    danger = Math.max(danger, player.fear / 160);
+   895→    this.audio.danger += (danger - this.audio.danger) * clamp(dt * 2, 0, 1);
+   896→
+   897→    // versus timer
+   898→    if (this.mode === 'versus') {
+   899→      this.timeLeft -= dt;
+   900→      if (this.isHost || this.net.socket === null) { /* authoritative-ish */ }
+   901→      if (this.timeLeft <= 0 && !this.gameEnded) {
+   902→        this.endGame(!this.net.isShepherd, 'Dawn breaks. The lantern flickers out.');
+   903→      }
+   904→    }
+   905→
+   906→    // win check: through the gate
+   907→    if (quests.state.gateOpen && player.pos.z > 56.5 && !this.escapedSent && !this.net.isShepherd) {
+   908→      this.escapedSent = true;
+   909→      if (this.mode === 'sp') this.endGame(true, 'You crossed the treeline as the bell fell silent.');
+   910→      else {
+   911→        this.net.sendGame('escaped', {});
+   912→        this.endGame(true, 'You escaped the vale.');
+   913→      }
+   914→    }
+   915→    // versus: monster kills all? handled by server gameover event
+   916→
+   917→    // networking
+   918→    if (this.mode !== 'sp' && this.net.connected) {
+   919→      this.sendT -= dt;
+   920→      if (this.sendT <= 0) {
+   921→        this.sendT = 0.08;
+   922→        this.net.sendState(player.serialize());
+   923→      }
+   924→      this.net.update(dt);
+   925→    }
+   926→
+   927→    // HUD
+   928→    const alive = this.net.lastSnap?.players.filter(p => !p.dead).length ?? 1;
+   929→    this.ui.updateHUD(player, quests, {
+   930→      versus: this.mode === 'versus',
+   931→      timeLeft: this.timeLeft,
+   932→      isMonster: this.mode === 'versus' && this.net.isShepherd,
+   933→      coopAlive: this.mode === 'coop' ? alive : undefined,
+   934→      coopTotal: this.mode === 'coop' ? (this.net.lastSnap?.players.length ?? 1) : undefined,
+   935→    });
+   936→
+   937→    // pending note modal
+   938→    if (this.pendingNote && this.state === 'playing') {
+   939→      const note = this.pendingNote;
+   940→      this.pendingNote = null;
+   941→      this.state = 'note';
+   942→      this.audio.play('paper', 0.5);
+   943→      this.ui.showNote(note, () => { this.state = 'playing'; if (!this.isTouch()) setTimeout(() => this.input.requestLock(), 50); });
+   944→    }
+   945→  }
+   946→  private _attackHeld = false;
+   947→  private isTouchHeld() { return false; }
+   948→
+   949→  private spawnHallucination() {
+   950→    if (!this.player) return;
+   951→    if (!this.halluc) {
+   952→      const geo = new THREE.CapsuleGeometry(0.3, 1.4, 3, 6);
+   953→      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.7, fog: true });
+   954→      this.halluc = new THREE.Mesh(geo, mat);
+   955→      this.halluc.scale.y = 1.5;
+   956→    }
+   957→    const ang = Math.random() * Math.PI * 2;
+   958→    const d = 7 + Math.random() * 4;
+   959→    this.halluc.position.set(this.player.pos.x + Math.cos(ang) * d, 1.6, this.player.pos.z + Math.sin(ang) * d);
+   960→    (this.halluc.material as THREE.MeshBasicMaterial).opacity = 0.75;
+   961→    this.hallucT = 0.7;
+   962→    this.scene.add(this.halluc);
+   963→    this.audio.play('whisper', 0.7);
+   964→  }
+   965→}
+   966→
+   967→function frame(): Promise<void> { return new Promise(r => requestAnimationFrame(() => r())); }
+   968→
+   969→let booted = false;
+   970→export function launch(container: HTMLElement) {
+   971→  if (booted) return;
+   972→  booted = true;
+   973→  const g = new Game(container);
+   974→  g.wireNet();
+   975→  (window as unknown as Record<string, unknown>).hvGame = g;
+   976→  void g;
+   977→}
+   978→

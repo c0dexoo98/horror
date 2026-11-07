@@ -1,0 +1,911 @@
+     1→// HOLLOW VALE — core engine: settings, save, procedural textures, audio synth, input
+     2→import * as THREE from 'three';
+     3→
+     4→/* ---------------- math utils ---------------- */
+     5→export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+     6→export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+     7→export const dist2D = (ax: number, az: number, bx: number, bz: number) => Math.hypot(ax - bx, az - bz);
+     8→export function mulberry32(seed: number) {
+     9→  let a = seed >>> 0;
+    10→  return function () {
+    11→    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    12→    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    13→    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    14→    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    15→  };
+    16→}
+    17→
+    18→/* ---------------- settings ---------------- */
+    19→export type Quality = 'low' | 'medium' | 'high';
+    20→export interface Settings {
+    21→  quality: Quality;
+    22→  sensitivity: number;
+    23→  invertY: boolean;
+    24→  volume: number;
+    25→  camMode: 'first' | 'third';
+    26→  serverUrl: string;
+    27→  showTouch: 'auto' | 'on' | 'off';
+    28→  playerName: string;
+    29→}
+    30→const SET_KEY = 'hv_settings_v1';
+    31→export function defaultSettings(): Settings {
+    32→  const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    33→  const cfg = (window as unknown as { HV_CONFIG?: { serverUrl?: string } }).HV_CONFIG || {};
+    34→  return {
+    35→    quality: touch ? 'medium' : 'high',
+    36→    sensitivity: 1.0,
+    37→    invertY: false,
+    38→    volume: 0.8,
+    39→    camMode: 'third',
+    40→    serverUrl: cfg.serverUrl || '',
+    41→    showTouch: 'auto',
+    42→    playerName: 'Survivor',
+    43→  };
+    44→}
+    45→export function loadSettings(): Settings {
+    46→  try {
+    47→    const raw = localStorage.getItem(SET_KEY);
+    48→    if (raw) return { ...defaultSettings(), ...JSON.parse(raw) };
+    49→  } catch { /* ignore */ }
+    50→  return defaultSettings();
+    51→}
+    52→export function saveSettings(s: Settings) {
+    53→  try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+    54→}
+    55→
+    56→/* ---------------- global environment state (weather etc.) ---------------- */
+    57→export const EnvState = {
+    58→  rain: 0,   // 0..1 — muffles sound, wets the world
+    59→  storm: 0,  // 0..1 — lightning strikes, heavier rain
+    60→  night: 1,  // always night in Hollow Vale
+    61→};
+    62→
+    63→/* ---------------- singleplayer save ---------------- */
+    64→export interface SPProgress {
+    65→  chapter: number;
+    66→  inventory: Record<string, number>;
+    67→  weapons: string[];
+    68→  notes: string[];
+    69→  flags: Record<string, unknown>;
+    70→  playTime: number;
+    71→  stats?: Record<string, number>;
+    72→  pos?: { x: number; z: number };
+    73→}
+    74→const SP_KEY = 'hv_sp_v1';
+    75→export function loadSPProgress(): SPProgress | null {
+    76→  try {
+    77→    const raw = localStorage.getItem(SP_KEY);
+    78→    if (raw) return JSON.parse(raw);
+    79→  } catch { /* ignore */ }
+    80→  return null;
+    81→}
+    82→export function saveSPProgress(p: SPProgress) {
+    83→  try { localStorage.setItem(SP_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+    84→}
+    85→export function clearSPProgress() { try { localStorage.removeItem(SP_KEY); } catch { /* ignore */ } }
+    86→
+    87→/* ---------------- procedural textures ---------------- */
+    88→type TexName = 'dirt' | 'grass' | 'plank' | 'plankdark' | 'stone' | 'roof' | 'bark' | 'cloth' | 'metal' | 'paper' | 'ground' | 'curtain' | 'brick' | 'shingle' | 'hay' | 'water' | 'iron' | 'corn' | 'wallpaper' | 'dress' | 'coat' | 'ritual';
+    89→const texCache = new Map<string, THREE.Texture>();
+    90→
+    91→function noiseCanvas(size: number, base: string, variants: string[], grain: number, seed = 1): HTMLCanvasElement {
+    92→  const c = document.createElement('canvas');
+    93→  c.width = c.height = size;
+    94→  const g = c.getContext('2d')!;
+    95→  const rnd = mulberry32(seed);
+    96→  g.fillStyle = base;
+    97→  g.fillRect(0, 0, size, size);
+    98→  for (let i = 0; i < variants.length; i++) {
+    99→    g.fillStyle = variants[i];
+   100→    for (let n = 0; n < size * size * 0.02; n++) {
+   101→      const x = rnd() * size, y = rnd() * size, r = 1 + rnd() * (size / 32);
+   102→      g.globalAlpha = 0.12 + rnd() * 0.22;
+   103→      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+   104→    }
+   105→  }
+   106→  g.globalAlpha = 1;
+   107→  const img = g.getImageData(0, 0, size, size);
+   108→  for (let i = 0; i < img.data.length; i += 4) {
+   109→    const n = (rnd() - 0.5) * grain;
+   110→    img.data[i] = clamp(img.data[i] + n, 0, 255);
+   111→    img.data[i + 1] = clamp(img.data[i + 1] + n, 0, 255);
+   112→    img.data[i + 2] = clamp(img.data[i + 2] + n, 0, 255);
+   113→  }
+   114→  g.putImageData(img, 0, 0);
+   115→  return c;
+   116→}
+   117→
+   118→export function getTexture(name: TexName): THREE.Texture {
+   119→  const cached = texCache.get(name);
+   120→  if (cached) return cached;
+   121→  const S = 256;
+   122→  let c = noiseCanvas(S, '#333', ['#2a2a2a'], 10, 1);
+   123→  const g2 = c.getContext('2d')!;
+   124→  switch (name) {
+   125→    case 'ground':
+   126→      c = noiseCanvas(S, '#2b2a24', ['#232420', '#332f26', '#1d1e19'], 26, 11);
+   127→      break;
+   128→    case 'dirt':
+   129→      c = noiseCanvas(S, '#3a3227', ['#2e2820', '#453a2c'], 22, 22);
+   130→      break;
+   131→    case 'grass':
+   132→      c = noiseCanvas(S, '#252e1c', ['#1c2416', '#2e3a22', '#161c10'], 30, 33);
+   133→      break;
+   134→    case 'plank': {
+   135→      c = noiseCanvas(S, '#4a3a28', ['#3c2f20', '#55422e'], 14, 44);
+   136→      g2.strokeStyle = 'rgba(20,14,8,0.9)';
+   137→      for (let y = 0; y < S; y += 32) {
+   138→        g2.lineWidth = 2; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke();
+   139→        g2.lineWidth = 1; g2.beginPath(); g2.moveTo(0, y + 16 + Math.random() * 4); g2.lineTo(S, y + 14 + Math.random() * 6); g2.stroke();
+   140→      }
+   141→      break;
+   142→    }
+   143→    case 'plankdark': {
+   144→      c = noiseCanvas(S, '#2e2618', ['#241d12', '#382e1e'], 16, 55);
+   145→      g2.strokeStyle = 'rgba(10,8,4,0.9)';
+   146→      for (let y = 0; y < S; y += 32) { g2.lineWidth = 2; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke(); }
+   147→      break;
+   148→    }
+   149→    case 'stone': {
+   150→      c = noiseCanvas(S, '#4a4a48', ['#3c3c3a', '#565652', '#323230'], 20, 66);
+   151→      g2.strokeStyle = 'rgba(18,18,16,0.85)';
+   152→      for (let y = 0; y < S; y += 42) {
+   153→        g2.lineWidth = 2.5; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke();
+   154→        const off = (y / 42) % 2 === 0 ? 0 : 32;
+   155→        for (let x = off; x < S; x += 64) { g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x, Math.min(S, y + 42)); g2.stroke(); }
+   156→      }
+   157→      break;
+   158→    }
+   159→    case 'roof': {
+   160→      c = noiseCanvas(S, '#33262a', ['#281d21', '#3e2e33'], 18, 77);
+   161→      g2.strokeStyle = 'rgba(12,8,10,0.9)';
+   162→      for (let y = 0; y < S; y += 20) { g2.lineWidth = 3; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke(); }
+   163→      for (let y = 0; y < S; y += 40) { for (let x = ((y / 40) % 2) * 20; x < S; x += 40) { g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x, y + 20); g2.stroke(); } }
+   164→      break;
+   165→    }
+   166→    case 'bark': {
+   167→      c = noiseCanvas(S, '#2c231a', ['#221b13', '#382c1f'], 30, 88);
+   168→      g2.strokeStyle = 'rgba(14,10,6,0.5)';
+   169→      for (let i = 0; i < 40; i++) { const x = Math.random() * S; g2.lineWidth = 1 + Math.random() * 2; g2.beginPath(); g2.moveTo(x, 0); g2.bezierCurveTo(x + 8, S / 3, x - 8, 2 * S / 3, x + 3, S); g2.stroke(); }
+   170→      break;
+   171→    }
+   172→    case 'cloth':
+   173→      c = noiseCanvas(S, '#3a3630', ['#302c26', '#443f38'], 24, 99);
+   174→      break;
+   175→    case 'metal':
+   176→      c = noiseCanvas(S, '#3c4044', ['#303438', '#484c50'], 12, 111);
+   177→      break;
+   178→    case 'curtain':
+   179→      c = noiseCanvas(S, '#2a2028', ['#221a20', '#342832'], 18, 122);
+   180→      break;
+   181→    case 'paper':
+   182→      c = noiseCanvas(S, '#c9bfa4', ['#bfb498', '#d4cab0'], 10, 133);
+   183→      break;
+   184→    case 'brick': {
+   185→      c = noiseCanvas(S, '#3d2c26', ['#332420', '#48352c'], 16, 144);
+   186→      g2.strokeStyle = 'rgba(16,12,10,0.9)';
+   187→      for (let y = 0; y < S; y += 26) {
+   188→        g2.lineWidth = 2.5; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke();
+   189→        const off = (y / 26) % 2 === 0 ? 0 : 26;
+   190→        for (let x = off; x < S; x += 52) { g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x, Math.min(S, y + 26)); g2.stroke(); }
+   191→      }
+   192→      break;
+   193→    }
+   194→    case 'shingle': {
+   195→      c = noiseCanvas(S, '#26222b', ['#1d1a22', '#302a35'], 14, 155);
+   196→      g2.strokeStyle = 'rgba(10,8,12,0.95)';
+   197→      for (let y = 0; y < S; y += 18) {
+   198→        g2.lineWidth = 2; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(S, y); g2.stroke();
+   199→        const off = ((y / 18) % 2) * 14;
+   200→        for (let x = off; x < S; x += 28) { g2.beginPath(); g2.arc(x + 14, y, 14, Math.PI, 0); g2.stroke(); }
+   201→      }
+   202→      break;
+   203→    }
+   204→    case 'hay':
+   205→      c = noiseCanvas(S, '#6b5a2a', ['#57491f', '#7d6b34', '#4a3d18'], 34, 166);
+   206→      break;
+   207→    case 'water':
+   208→      c = noiseCanvas(S, '#101c20', ['#0c161a', '#14242a', '#0a1216'], 10, 177);
+   209→      break;
+   210→    case 'iron': {
+   211→      c = noiseCanvas(S, '#26282c', ['#1c1e22', '#303338'], 14, 188);
+   212→      g2.strokeStyle = 'rgba(70,60,40,0.35)';
+   213→      for (let i = 0; i < 22; i++) {
+   214→        const x = Math.random() * S, y = Math.random() * S, r = 2 + Math.random() * 7;
+   215→        g2.beginPath(); g2.arc(x, y, r, 0, Math.PI * 2); g2.stroke();
+   216→      }
+   217→      break;
+   218→    }
+   219→    case 'corn': {
+   220→      c = noiseCanvas(S, '#1a2410', ['#131c0b', '#223016'], 26, 199);
+   221→      g2.strokeStyle = 'rgba(50,72,28,0.8)';
+   222→      for (let i = 0; i < 60; i++) {
+   223→        const x = Math.random() * S;
+   224→        g2.lineWidth = 1.5;
+   225→        g2.beginPath(); g2.moveTo(x, S); g2.quadraticCurveTo(x + 8, S / 2, x + 2, 0); g2.stroke();
+   226→      }
+   227→      break;
+   228→    }
+   229→    case 'wallpaper': {
+   230→      c = noiseCanvas(S, '#3a3226', ['#312a20', '#443a2c'], 18, 211);
+   231→      g2.strokeStyle = 'rgba(90,74,50,0.4)';
+   232→      for (let y = 8; y < S; y += 32) for (let x = 8; x < S; x += 32) {
+   233→        g2.beginPath(); g2.arc(x, y, 5, 0, Math.PI * 2); g2.stroke();
+   234→      }
+   235→      break;
+   236→    }
+   237→    case 'dress':
+   238→      c = noiseCanvas(S, '#6a6560', ['#57534e', '#7a756e', '#48443f'], 22, 222);
+   239→      break;
+   240→    case 'coat':
+   241→      c = noiseCanvas(S, '#2c3038', ['#232730', '#363c46'], 18, 233);
+   242→      break;
+   243→    case 'ritual': {
+   244→      c = noiseCanvas(S, '#20261e', ['#181d16', '#2a3226'], 20, 244);
+   245→      g2.strokeStyle = 'rgba(120,140,90,0.5)';
+   246→      for (let i = 0; i < 5; i++) { g2.beginPath(); g2.arc(S / 2, S / 2, 30 + i * 22, 0, Math.PI * 2); g2.stroke(); }
+   247→      break;
+   248→    }
+   249→  }
+   250→  const t = new THREE.CanvasTexture(c);
+   251→  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+   252→  t.colorSpace = THREE.SRGBColorSpace;
+   253→  t.anisotropy = 4;
+   254→  texCache.set(name, t);
+   255→  return t;
+   256→}
+   257→
+   258→/* soft radial sprite used by fog planes, glow, smoke, lightning dust */
+   259→export function getSpriteTexture(kind: 'puff' | 'flame' | 'glow' | 'blood' | 'hole' | 'rain'): THREE.Texture {
+   260→  const key = 'sprite_' + kind;
+   261→  const cached = texCache.get(key);
+   262→  if (cached) return cached;
+   263→  const S = 128;
+   264→  const c = document.createElement('canvas');
+   265→  c.width = c.height = S;
+   266→  const g = c.getContext('2d')!;
+   267→  if (kind === 'puff' || kind === 'glow' || kind === 'flame') {
+   268→    const grad = g.createRadialGradient(S / 2, S / 2, 2, S / 2, S / 2, S / 2);
+   269→    if (kind === 'puff') { grad.addColorStop(0, 'rgba(180,185,200,0.55)'); grad.addColorStop(0.5, 'rgba(150,155,175,0.22)'); grad.addColorStop(1, 'rgba(140,145,165,0)'); }
+   270→    else if (kind === 'glow') { grad.addColorStop(0, 'rgba(255,214,150,0.9)'); grad.addColorStop(0.4, 'rgba(255,170,80,0.35)'); grad.addColorStop(1, 'rgba(255,150,50,0)'); }
+   271→    else { grad.addColorStop(0, 'rgba(255,235,190,0.95)'); grad.addColorStop(0.35, 'rgba(255,160,60,0.8)'); grad.addColorStop(0.7, 'rgba(200,70,20,0.35)'); grad.addColorStop(1, 'rgba(120,30,10,0)'); }
+   272→    g.fillStyle = grad;
+   273→    g.fillRect(0, 0, S, S);
+   274→  } else if (kind === 'blood') {
+   275→    const rnd2 = mulberry32(31);
+   276→    g.fillStyle = 'rgba(90,8,8,0.9)';
+   277→    g.beginPath(); g.arc(S / 2, S / 2, S * 0.22, 0, Math.PI * 2); g.fill();
+   278→    for (let i = 0; i < 26; i++) {
+   279→      const a = rnd2() * Math.PI * 2, d = S * (0.16 + rnd2() * 0.3);
+   280→      g.beginPath(); g.arc(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d, 1.5 + rnd2() * 5, 0, Math.PI * 2);
+   281→      g.fillStyle = `rgba(${70 + rnd2() * 40},6,6,${0.5 + rnd2() * 0.45})`; g.fill();
+   282→    }
+   283→  } else if (kind === 'hole') {
+   284→    const grad = g.createRadialGradient(S / 2, S / 2, 1, S / 2, S / 2, S / 2);
+   285→    grad.addColorStop(0, 'rgba(8,8,8,0.95)'); grad.addColorStop(0.35, 'rgba(20,18,16,0.8)'); grad.addColorStop(0.6, 'rgba(40,36,30,0.35)'); grad.addColorStop(1, 'rgba(40,36,30,0)');
+   286→    g.fillStyle = grad; g.fillRect(0, 0, S, S);
+   287→  } else {
+   288→    // rain streak
+   289→    const grad = g.createLinearGradient(0, 0, 0, S);
+   290→    grad.addColorStop(0, 'rgba(160,180,210,0)'); grad.addColorStop(0.5, 'rgba(170,190,220,0.5)'); grad.addColorStop(1, 'rgba(160,180,210,0)');
+   291→    g.fillStyle = grad; g.fillRect(S / 2 - 1, 0, 2, S);
+   292→  }
+   293→  const t = new THREE.CanvasTexture(c);
+   294→  t.colorSpace = THREE.SRGBColorSpace;
+   295→  texCache.set(key, t);
+   296→  return t;
+   297→}
+   298→
+   299→export function repeatTex(t: THREE.Texture, rx: number, ry: number) {
+   300→  const c = t.clone();
+   301→  c.needsUpdate = true;
+   302→  c.repeat.set(rx, ry);
+   303→  return c;
+   304→}
+   305→
+   306→/* ---------------- audio engine (fully procedural) ---------------- */
+   307→export class AudioEngine {
+   308→  ctx: AudioContext | null = null;
+   309→  master: GainNode | null = null;
+   310→  private windGain: GainNode | null = null;
+   311→  private droneOsc: OscillatorNode | null = null;
+   312→  private droneGain: GainNode | null = null;
+   313→  private dissGain: GainNode | null = null;
+   314→  private growlGain: GainNode | null = null;
+   315→  private growlOsc: OscillatorNode | null = null;
+   316→  private heartTimer = 0;
+   317→  danger = 0; // 0..1 drives heartbeat & tension layers
+   318→  volume = 0.8;
+   319→  private rainGain: GainNode | null = null;
+   320→  private chaseGain: GainNode | null = null;
+   321→  private chaseOsc: OscillatorNode | null = null;
+   322→
+   323→  /** 0..1 — intense chase music layer (pounding strings + pulse) */
+   324→  setChase(x: number) {
+   325→    if (!this.chaseGain || !this.ctx) return;
+   326→    this.chaseGain.gain.setTargetAtTime(clamp(x, 0, 1) * 0.16, this.ctx.currentTime, 0.35);
+   327→    if (this.chaseOsc) this.chaseOsc.frequency.setTargetAtTime(98 + x * 40, this.ctx.currentTime, 0.5);
+   328→  }
+   329→
+   330→  /** 0..1 — rain ambience loop */
+   331→  setRain(x: number) {
+   332→    if (!this.rainGain || !this.ctx) return;
+   333→    this.rainGain.gain.setTargetAtTime(clamp(x, 0, 1) * 0.16, this.ctx.currentTime, 1.2);
+   334→  }
+   335→
+   336→  ensure() {
+   337→    if (this.ctx) { if (this.ctx.state === 'suspended') void this.ctx.resume(); return; }
+   338→    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+   339→    this.ctx = new AC();
+   340→    this.master = this.ctx.createGain();
+   341→    this.master.gain.value = this.volume;
+   342→    this.master.connect(this.ctx.destination);
+   343→    this.startAmbience();
+   344→  }
+   345→
+   346→  setVolume(v: number) {
+   347→    this.volume = v;
+   348→    if (this.master) this.master.gain.value = v;
+   349→  }
+   350→
+   351→  private noiseBuffer(seconds = 2): AudioBuffer {
+   352→    const ctx = this.ctx!;
+   353→    const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * seconds)), ctx.sampleRate);
+   354→    const d = buf.getChannelData(0);
+   355→    let last = 0;
+   356→    for (let i = 0; i < d.length; i++) {
+   357→      const w = Math.random() * 2 - 1;
+   358→      last = (last + 0.02 * w) / 1.02;
+   359→      d[i] = last * 3.2;
+   360→    }
+   361→    return buf;
+   362→  }
+   363→
+   364→  private startAmbience() {
+   365→    const ctx = this.ctx!;
+   366→    // wind
+   367→    const src = ctx.createBufferSource();
+   368→    src.buffer = this.noiseBuffer(4); src.loop = true;
+   369→    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.6;
+   370→    this.windGain = ctx.createGain(); this.windGain.gain.value = 0.14;
+   371→    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.09;
+   372→    const lfoG = ctx.createGain(); lfoG.gain.value = 0.05;
+   373→    lfo.connect(lfoG); lfoG.connect(this.windGain.gain);
+   374→    src.connect(lp); lp.connect(this.windGain); this.windGain.connect(this.master!);
+   375→    src.start(); lfo.start();
+   376→    // dread drone
+   377→    this.droneOsc = ctx.createOscillator(); this.droneOsc.type = 'sine'; this.droneOsc.frequency.value = 46;
+   378→    const dr2 = ctx.createOscillator(); dr2.type = 'sine'; dr2.frequency.value = 46.7;
+   379→    this.droneGain = ctx.createGain(); this.droneGain.gain.value = 0.05;
+   380→    this.dissGain = ctx.createGain(); this.dissGain.gain.value = 0.0;
+   381→    const diss = ctx.createOscillator(); diss.type = 'sawtooth'; diss.frequency.value = 92;
+   382→    const dissLp = ctx.createBiquadFilter(); dissLp.type = 'lowpass'; dissLp.frequency.value = 300;
+   383→    this.droneOsc.connect(this.droneGain); dr2.connect(this.droneGain);
+   384→    this.droneGain.connect(this.master!);
+   385→    diss.connect(dissLp); dissLp.connect(this.dissGain); this.dissGain.connect(this.master!);
+   386→    this.droneOsc.start(); dr2.start(); diss.start();
+   387→    // monster growl loop (gain driven per-frame)
+   388→    this.growlOsc = ctx.createOscillator(); this.growlOsc.type = 'sawtooth'; this.growlOsc.frequency.value = 58;
+   389→    const growlLp = ctx.createBiquadFilter(); growlLp.type = 'lowpass'; growlLp.frequency.value = 190;
+   390→    const growlLfo = ctx.createOscillator(); growlLfo.frequency.value = 5.2;
+   391→    const growlLfoG = ctx.createGain(); growlLfoG.gain.value = 14;
+   392→    growlLfo.connect(growlLfoG); growlLfoG.connect(this.growlOsc.frequency);
+   393→    this.growlGain = ctx.createGain(); this.growlGain.gain.value = 0;
+   394→    this.growlOsc.connect(growlLp); growlLp.connect(this.growlGain); this.growlGain.connect(this.master!);
+   395→    this.growlOsc.start(); growlLfo.start();
+   396→    // rain loop
+   397→    const rainSrc = ctx.createBufferSource(); rainSrc.buffer = this.noiseBuffer(3); rainSrc.loop = true;
+   398→    const rainHp = ctx.createBiquadFilter(); rainHp.type = 'highpass'; rainHp.frequency.value = 1400;
+   399→    const rainLp2 = ctx.createBiquadFilter(); rainLp2.type = 'lowpass'; rainLp2.frequency.value = 6500;
+   400→    this.rainGain = ctx.createGain(); this.rainGain.gain.value = 0;
+   401→    rainSrc.connect(rainHp); rainHp.connect(rainLp2); rainLp2.connect(this.rainGain); this.rainGain.connect(this.master!);
+   402→    rainSrc.start();
+   403→    // chase layer: two detuned saws + pounding pulse
+   404→    this.chaseGain = ctx.createGain(); this.chaseGain.gain.value = 0;
+   405→    this.chaseOsc = ctx.createOscillator(); this.chaseOsc.type = 'sawtooth'; this.chaseOsc.frequency.value = 98;
+   406→    const chOsc2 = ctx.createOscillator(); chOsc2.type = 'sawtooth'; chOsc2.frequency.value = 98.9;
+   407→    const chLp = ctx.createBiquadFilter(); chLp.type = 'lowpass'; chLp.frequency.value = 700;
+   408→    const chTrem = ctx.createOscillator(); chTrem.type = 'sine'; chTrem.frequency.value = 7.4;
+   409→    const chTremG = ctx.createGain(); chTremG.gain.value = 0.5;
+   410→    const chTremOff = ctx.createGain(); chTremOff.gain.value = 0.5;
+   411→    chTrem.connect(chTremG);
+   412→    this.chaseOsc.connect(chLp); chOsc2.connect(chLp);
+   413→    chLp.connect(chTremOff); chTremG.connect(chTremOff.gain); chTremOff.connect(this.chaseGain); this.chaseGain.connect(this.master!);
+   414→    this.chaseOsc.start(); chOsc2.start(); chTrem.start();
+   415→    // chase pulse (kick)
+   416→    const pulseOsc = ctx.createOscillator(); pulseOsc.type = 'sine'; pulseOsc.frequency.value = 55;
+   417→    const pulseG = ctx.createGain(); pulseG.gain.value = 0;
+   418→    const pulseLfo = ctx.createOscillator(); pulseLfo.type = 'square'; pulseLfo.frequency.value = 2.2;
+   419→    const pulseLfoG = ctx.createGain(); pulseLfoG.gain.value = 0.06;
+   420→    pulseLfo.connect(pulseLfoG); pulseLfoG.connect(pulseG.gain);
+   421→    pulseOsc.connect(pulseG); pulseG.connect(this.chaseGain);
+   422→    pulseOsc.start(); pulseLfo.start();
+   423→  }
+   424→
+   425→  update(dt: number) {
+   426→    if (!this.ctx || !this.droneGain || !this.droneOsc || !this.dissGain) return;
+   427→    const t = this.ctx.currentTime;
+   428→    this.droneGain.gain.setTargetAtTime(0.04 + this.danger * 0.09, t, 0.4);
+   429→    this.droneOsc.frequency.setTargetAtTime(46 + this.danger * 10, t, 0.6);
+   430→    this.dissGain.gain.setTargetAtTime(this.danger * 0.045, t, 0.5);
+   431→    if (this.windGain) this.windGain.gain.setTargetAtTime(0.10 + this.danger * 0.08, t, 1.2);
+   432→    // heartbeat
+   433→    if (this.danger > 0.25) {
+   434→      this.heartTimer -= dt;
+   435→      if (this.heartTimer <= 0) {
+   436→        const bpm = 42 + this.danger * 78;
+   437→        this.heartTimer = 60 / bpm;
+   438→        this.thump(0.5 + this.danger * 0.5);
+   439→        setTimeout(() => this.thump(0.35 + this.danger * 0.35), 150);
+   440→      }
+   441→    }
+   442→  }
+   443→
+   444→  private thump(vol: number) {
+   445→    const ctx = this.ctx; if (!ctx || !this.master) return;
+   446→    const o = ctx.createOscillator(); o.type = 'sine';
+   447→    o.frequency.setValueAtTime(58, ctx.currentTime);
+   448→    o.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.12);
+   449→    const g = ctx.createGain();
+   450→    g.gain.setValueAtTime(vol * 0.5, ctx.currentTime);
+   451→    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+   452→    o.connect(g); g.connect(this.master);
+   453→    o.start(); o.stop(ctx.currentTime + 0.25);
+   454→  }
+   455→
+   456→  private env(node: AudioNode, vol: number, dur: number, attack = 0.005): GainNode {
+   457→    const ctx = this.ctx!;
+   458→    const g = ctx.createGain();
+   459→    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+   460→    g.gain.linearRampToValueAtTime(vol, ctx.currentTime + attack);
+   461→    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+   462→    node.connect(g); g.connect(this.master!);
+   463→    return g;
+   464→  }
+   465→
+   466→  // spatial helper: returns [gain, pan]
+   467→  spatial(listener: THREE.Vector3 | null, listenerYaw: number, pos: THREE.Vector3 | null, base: number): [number, number] {
+   468→    if (!listener || !pos) return [base, 0];
+   469→    const dx = pos.x - listener.x, dz = pos.z - listener.z;
+   470→    const d = Math.hypot(dx, dz);
+   471→    const gain = base * clamp(1 - d / 38, 0, 1) ** 1.4;
+   472→    const ang = Math.atan2(dx, dz) - listenerYaw;
+   473→    const pan = clamp(Math.sin(ang), -1, 1) * clamp(1 - d / 40, 0, 1);
+   474→    return [gain, pan];
+   475→  }
+   476→
+   477→  play3d(name: string, listener: THREE.Vector3 | null, listenerYaw: number, pos: THREE.Vector3 | null, base = 0.5) {
+   478→    const [gain, pan] = this.spatial(listener, listenerYaw, pos, base);
+   479→    if (gain < 0.004) return;
+   480→    this.play(name, gain, pan);
+   481→  }
+   482→
+   483→  play(name: string, vol = 0.5, pan = 0) {
+   484→    const ctx = this.ctx; if (!ctx || !this.master) return;
+   485→    const out = ctx.createStereoPanner(); out.pan.value = clamp(pan, -1, 1); out.connect(this.master);
+   486→    const t = ctx.currentTime;
+   487→    switch (name) {
+   488→      case 'step': {
+   489→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.1);
+   490→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 240 + Math.random() * 160; f.Q.value = 1.1;
+   491→        s.connect(f);
+   492→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+   493→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.1);
+   494→        break;
+   495→      }
+   496→      case 'shot': {
+   497→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.4);
+   498→        const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+   499→        f.frequency.setValueAtTime(3200, t); f.frequency.exponentialRampToValueAtTime(180, t + 0.28);
+   500→        s.connect(f);
+   501→        const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+   502→        f.connect(g); g.connect(out);
+   503→        const o = ctx.createOscillator(); o.type = 'triangle';
+   504→        o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.16);
+   505→        const g2 = ctx.createGain(); g2.gain.setValueAtTime(vol * 0.9, t); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+   506→        o.connect(g2); g2.connect(out);
+   507→        s.start(); s.stop(t + 0.4); o.start(); o.stop(t + 0.22);
+   508→        break;
+   509→      }
+   510→      case 'dry': { this.blip(out, 1400, 0.04, vol * 0.4, 'square'); break; }
+   511→      case 'reload': { this.blip(out, 900, 0.05, vol * 0.5, 'square'); setTimeout(() => this.blip(out, 620, 0.06, vol * 0.5, 'square'), 130); setTimeout(() => this.blip(out, 1100, 0.05, vol * 0.6, 'square'), 300); break; }
+   512→      case 'knife': {
+   513→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.2);
+   514→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2.5;
+   515→        f.frequency.setValueAtTime(600, t); f.frequency.exponentialRampToValueAtTime(3600, t + 0.12);
+   516→        s.connect(f);
+   517→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.7, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+   518→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.2);
+   519→        break;
+   520→      }
+   521→      case 'flesh': {
+   522→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.25);
+   523→        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 380;
+   524→        s.connect(f);
+   525→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+   526→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.25);
+   527→        break;
+   528→      }
+   529→      case 'pickup': { this.tone(out, 520, 0.09, vol * 0.35, 'sine'); setTimeout(() => this.tone(out, 780, 0.12, vol * 0.35, 'sine'), 80); break; }
+   530→      case 'paper': {
+   531→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.3);
+   532→        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1800;
+   533→        s.connect(f);
+   534→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.35, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+   535→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.3);
+   536→        break;
+   537→      }
+   538→      case 'door': {
+   539→        const o = ctx.createOscillator(); o.type = 'sawtooth';
+   540→        o.frequency.setValueAtTime(85, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.7);
+   541→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 300; f.Q.value = 4;
+   542→        o.connect(f);
+   543→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.45, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+   544→        f.connect(g); g.connect(out); o.start(); o.stop(t + 0.8);
+   545→        break;
+   546→      }
+   547→      case 'brazier': {
+   548→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(1.2);
+   549→        const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+   550→        f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2400, t + 0.5);
+   551→        s.connect(f);
+   552→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.8, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+   553→        f.connect(g); g.connect(out); s.start(); s.stop(t + 1.2);
+   554→        break;
+   555→      }
+   556→      case 'click': { this.blip(out, 2000, 0.03, vol * 0.3, 'square'); break; }
+   557→      case 'flash': { this.blip(out, 2600, 0.025, vol * 0.35, 'square'); break; }
+   558→      case 'scare': {
+   559→        for (let i = 0; i < 5; i++) {
+   560→          const o = ctx.createOscillator(); o.type = 'sawtooth';
+   561→          const base = 620 + i * 47;
+   562→          o.frequency.setValueAtTime(base, t);
+   563→          o.frequency.linearRampToValueAtTime(base * 1.9, t + 0.5);
+   564→          const g = ctx.createGain();
+   565→          g.gain.setValueAtTime(0.0001, t);
+   566→          g.gain.linearRampToValueAtTime(vol * 0.16, t + 0.03);
+   567→          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+   568→          o.connect(g); g.connect(out); o.start(); o.stop(t + 0.6);
+   569→        }
+   570→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.6);
+   571→        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 900;
+   572→        s.connect(f);
+   573→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+   574→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.6);
+   575→        break;
+   576→      }
+   577→      case 'scream': {
+   578→        const o = ctx.createOscillator(); o.type = 'sawtooth';
+   579→        o.frequency.setValueAtTime(780, t);
+   580→        o.frequency.exponentialRampToValueAtTime(160, t + 0.9);
+   581→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 700; f.Q.value = 2;
+   582→        o.connect(f);
+   583→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.55, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+   584→        f.connect(g); g.connect(out); o.start(); o.stop(t + 1);
+   585→        break;
+   586→      }
+   587→      case 'whisper': {
+   588→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(1.4);
+   589→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1150; f.Q.value = 6;
+   590→        const lfo = ctx.createOscillator(); lfo.frequency.value = 6.5;
+   591→        const lg = ctx.createGain(); lg.gain.value = 420;
+   592→        lfo.connect(lg); lg.connect(f.frequency);
+   593→        s.connect(f);
+   594→        const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+   595→        g.gain.linearRampToValueAtTime(vol * 0.28, t + 0.4);
+   596→        g.gain.linearRampToValueAtTime(0.0001, t + 1.3);
+   597→        f.connect(g); g.connect(out); s.start(); s.stop(t + 1.4); lfo.start(); lfo.stop(t + 1.4);
+   598→        break;
+   599→      }
+   600→      case 'bang': {
+   601→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.8);
+   602→        const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+   603→        f.frequency.setValueAtTime(5200, t); f.frequency.exponentialRampToValueAtTime(120, t + 0.5);
+   604→        s.connect(f);
+   605→        const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+   606→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.8);
+   607→        const o = ctx.createOscillator(); o.type = 'sine';
+   608→        o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+   609→        const g2 = ctx.createGain(); g2.gain.setValueAtTime(vol * 0.9, t); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+   610→        o.connect(g2); g2.connect(out); o.start(); o.stop(t + 0.65);
+   611→        break;
+   612→      }
+   613→      case 'heal': { this.tone(out, 420, 0.15, vol * 0.3, 'sine'); setTimeout(() => this.tone(out, 560, 0.2, vol * 0.3, 'sine'), 140); break; }
+   614→      case 'craft': { this.blip(out, 500, 0.07, vol * 0.5, 'square'); setTimeout(() => this.blip(out, 760, 0.07, vol * 0.5, 'square'), 120); setTimeout(() => this.blip(out, 1000, 0.1, vol * 0.5, 'square'), 240); break; }
+   615→      case 'win': {
+   616→        const notes = [392, 494, 587, 784];
+   617→        notes.forEach((n, i) => setTimeout(() => this.tone(out, n, 0.5, vol * 0.25, 'sine'), i * 220));
+   618→        break;
+   619→      }
+   620→      case 'lose': {
+   621→        const notes = [392, 330, 262, 175];
+   622→        notes.forEach((n, i) => setTimeout(() => this.tone(out, n, 0.6, vol * 0.3, 'sine'), i * 300));
+   623→        break;
+   624→      }
+   625→      case 'bell': {
+   626→        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 660;
+   627→        const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 663;
+   628→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.4, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+   629→        o.connect(g); o2.connect(g); g.connect(out); o.start(); o2.start(); o.stop(t + 2.5); o2.stop(t + 2.5);
+   630→        break;
+   631→      }
+   632→      case 'thunder': {
+   633→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(2.6);
+   634→        const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+   635→        f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(60, t + 2.2);
+   636→        s.connect(f);
+   637→        const g = ctx.createGain();
+   638→        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol * 0.9, t + 0.08);
+   639→        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
+   640→        f.connect(g); g.connect(out); s.start(); s.stop(t + 2.6);
+   641→        const o = ctx.createOscillator(); o.type = 'sine';
+   642→        o.frequency.setValueAtTime(44, t); o.frequency.exponentialRampToValueAtTime(24, t + 1.8);
+   643→        const g2 = ctx.createGain(); g2.gain.setValueAtTime(vol * 0.5, t); g2.gain.exponentialRampToValueAtTime(0.0001, t + 1.9);
+   644→        o.connect(g2); g2.connect(out); o.start(); o.stop(t + 2);
+   645→        break;
+   646→      }
+   647→      case 'crow': {
+   648→        for (let i = 0; i < 3; i++) {
+   649→          setTimeout(() => {
+   650→            const o = ctx.createOscillator(); o.type = 'sawtooth';
+   651→            o.frequency.setValueAtTime(720 + Math.random() * 120, ctx.currentTime);
+   652→            o.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 0.14);
+   653→            const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.6;
+   654→            o.connect(f);
+   655→            const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.3, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
+   656→            f.connect(g); g.connect(out); o.start(); o.stop(ctx.currentTime + 0.18);
+   657→          }, i * 170);
+   658→        }
+   659→        break;
+   660→      }
+   661→      case 'crank': {
+   662→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.3);
+   663→        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 500 + Math.random() * 300; f.Q.value = 3;
+   664→        s.connect(f);
+   665→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.3, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+   666→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.3);
+   667→        break;
+   668→      }
+   669→      case 'shutter': { this.blip(out, 1800, 0.03, vol * 0.5, 'square'); setTimeout(() => this.blip(out, 900, 0.04, vol * 0.4, 'square'), 60); break; }
+   670→      case 'static': {
+   671→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.5);
+   672→        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1200;
+   673→        s.connect(f);
+   674→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.22, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+   675→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.5);
+   676→        break;
+   677→      }
+   678→      case 'unjam': { this.blip(out, 420, 0.07, vol * 0.5, 'square'); setTimeout(() => this.blip(out, 300, 0.09, vol * 0.5, 'square'), 120); break; }
+   679→      case 'stab': {
+   680→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.3);
+   681→        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
+   682→        s.connect(f);
+   683→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.85, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+   684→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.32);
+   685→        this.blip(out, 90, 0.2, vol * 0.4, 'sine');
+   686→        break;
+   687→      }
+   688→      case 'glass': {
+   689→        for (let i = 0; i < 6; i++) {
+   690→          setTimeout(() => this.blip(out, 2200 + Math.random() * 2600, 0.05, vol * 0.2, 'triangle'), i * 40);
+   691→        }
+   692→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(0.3);
+   693→        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 2600;
+   694→        s.connect(f);
+   695→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.4, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+   696→        f.connect(g); g.connect(out); s.start(); s.stop(t + 0.3);
+   697→        break;
+   698→      }
+   699→      case 'chime': {
+   700→        const notes = [523, 659, 784];
+   701→        notes.forEach((n, i) => setTimeout(() => this.tone(out, n, 0.4, vol * 0.2, 'sine'), i * 120));
+   702→        break;
+   703→      }
+   704→      case 'sizzle': {
+   705→        const s = ctx.createBufferSource(); s.buffer = this.noiseBuffer(1.0);
+   706→        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3000;
+   707→        s.connect(f);
+   708→        const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.3, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+   709→        f.connect(g); g.connect(out); s.start(); s.stop(t + 1);
+   710→        break;
+   711→      }
+   712→      case 'moan': {
+   713→        const o = ctx.createOscillator(); o.type = 'sawtooth';
+   714→        o.frequency.setValueAtTime(210, t);
+   715→        o.frequency.linearRampToValueAtTime(150, t + 1.1);
+   716→        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; f.Q.value = 2;
+   717→        o.connect(f);
+   718→        const g = ctx.createGain();
+   719→        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol * 0.4, t + 0.25);
+   720→        g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+   721→        f.connect(g); g.connect(out); o.start(); o.stop(t + 1.3);
+   722→        break;
+   723→      }
+   724→      case 'coo': {
+   725→        const seq = [0, 180, 360];
+   726→        seq.forEach((d, i) => setTimeout(() => {
+   727→          const o = ctx.createOscillator(); o.type = 'sine';
+   728→          o.frequency.setValueAtTime(330 + i * 20, ctx.currentTime);
+   729→          o.frequency.exponentialRampToValueAtTime(250, ctx.currentTime + 0.15);
+   730→          const g = ctx.createGain(); g.gain.setValueAtTime(vol * 0.3, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+   731→          o.connect(g); g.connect(out); o.start(); o.stop(ctx.currentTime + 0.2);
+   732→        }, d));
+   733→        break;
+   734→      }
+   735→      case 'ritual': {
+   736→        const notes = [196, 233, 175, 147];
+   737→        notes.forEach((n, i) => setTimeout(() => {
+   738→          const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = n;
+   739→          const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = n * 1.005;
+   740→          const g = ctx.createGain();
+   741→          g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(vol * 0.22, ctx.currentTime + 0.4);
+   742→          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.6);
+   743→          o.connect(g); o2.connect(g); g.connect(out); o.start(); o2.start(); o.stop(ctx.currentTime + 1.7); o2.stop(ctx.currentTime + 1.7);
+   744→        }, i * 500));
+   745→        break;
+   746→      }
+   747→    }
+   748→  }
+   749→
+   750→  private blip(out: AudioNode, freq: number, dur: number, vol: number, type: OscillatorType) {
+   751→    const ctx = this.ctx!; const t = ctx.currentTime;
+   752→    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+   753→    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+   754→    o.connect(g); g.connect(out); o.start(); o.stop(t + dur + 0.01);
+   755→  }
+   756→  private tone(out: AudioNode, freq: number, dur: number, vol: number, type: OscillatorType) {
+   757→    this.blip(out, freq, dur, vol, type);
+   758→  }
+   759→
+   760→  setGrowl(gain: number, pitch = 58) {
+   761→    if (!this.growlGain || !this.growlOsc || !this.ctx) return;
+   762→    this.growlGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.15);
+   763→    this.growlOsc.frequency.setTargetAtTime(pitch, this.ctx.currentTime, 0.2);
+   764→  }
+   765→}
+   766→
+   767→/* keyboard normalization: fall back to e.key when e.code is empty (some webviews) */
+   768→const KEY_MAP: Record<string, string> = {
+   769→  w: 'KeyW', a: 'KeyA', s: 'KeyS', d: 'KeyD', e: 'KeyE', r: 'KeyR', f: 'KeyF', q: 'KeyQ',
+   770→  h: 'KeyH', v: 'KeyV', c: 'KeyC', i: 'KeyI', escape: 'Escape', shift: 'ShiftLeft',
+   771→  control: 'ControlLeft', '1': 'Digit1', '2': 'Digit2', '3': 'Digit3', '4': 'Digit4', '5': 'Digit5', ' ': 'Space',
+   772→  g: 'KeyG', m: 'KeyM', j: 'KeyJ', b: 'KeyB', n: 'KeyN', u: 'KeyU', t: 'KeyT', x: 'KeyX',
+   773→  arrowup: 'ArrowUp', arrowdown: 'ArrowDown', arrowleft: 'ArrowLeft', arrowright: 'ArrowRight',
+   774→};
+   775→function normalizeKey(e: KeyboardEvent): string {
+   776→  if (e.code) return e.code;
+   777→  const k = e.key.toLowerCase();
+   778→  return KEY_MAP[k] || 'Key_' + k.toUpperCase();
+   779→}
+   780→
+   781→/* ---------------- input ---------------- */
+   782→export class Input {
+   783→  keys: Record<string, boolean> = {};
+   784→  buttons: Record<string, boolean> = {}; // unified action buttons (touch + kb)
+   785→  look = { x: 0, y: 0 }; // consumed each frame
+   786→  touchMove = { x: 0, y: 0 };
+   787→  pointerLocked = false;
+   788→  private el: HTMLElement | null = null;
+   789→  onKeyExtra: ((code: string) => void) | null = null;
+   790→
+   791→  attach(el: HTMLElement) {
+   792→    this.el = el;
+   793→    window.addEventListener('keydown', this.kd);
+   794→    window.addEventListener('keyup', this.ku);
+   795→    el.addEventListener('mousedown', this.md);
+   796→    window.addEventListener('mouseup', this.mu);
+   797→    window.addEventListener('mousemove', this.mm);
+   798→    document.addEventListener('pointerlockchange', this.plc);
+   799→    el.addEventListener('contextmenu', (e) => e.preventDefault());
+   800→  }
+   801→  detach() {
+   802→    window.removeEventListener('keydown', this.kd);
+   803→    window.removeEventListener('keyup', this.ku);
+   804→    window.removeEventListener('mouseup', this.mu);
+   805→    window.removeEventListener('mousemove', this.mm);
+   806→    document.removeEventListener('pointerlockchange', this.plc);
+   807→  }
+   808→  private kd = (e: KeyboardEvent) => {
+   809→    if (e.repeat) { return; }
+   810→    const code = normalizeKey(e);
+   811→    this.keys[code] = true;
+   812→    if (this.onKeyExtra) this.onKeyExtra(code);
+   813→    if (['Space', 'Tab'].includes(code)) e.preventDefault();
+   814→  };
+   815→  private ku = (e: KeyboardEvent) => { this.keys[normalizeKey(e)] = false; };
+   816→  private md = (e: MouseEvent) => {
+   817→    if (!this.pointerLocked && this.el) { void this.el.requestPointerLock?.(); }
+   818→    if (e.button === 0) this.buttons['attack'] = true;
+   819→    if (e.button === 2) this.buttons['aim'] = true;
+   820→  };
+   821→  private mu = (e: MouseEvent) => {
+   822→    if (e.button === 0) this.buttons['attack'] = false;
+   823→    if (e.button === 2) this.buttons['aim'] = false;
+   824→  };
+   825→  private mm = (e: MouseEvent) => {
+   826→    if (!this.pointerLocked) return;
+   827→    this.look.x += e.movementX * 0.0022;
+   828→    this.look.y += e.movementY * 0.0022;
+   829→  };
+   830→  private plc = () => { this.pointerLocked = document.pointerLockElement === this.el; };
+   831→
+   832→  requestLock() { if (this.el && !this.pointerLocked) void this.el.requestPointerLock?.(); }
+   833→  exitLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+   834→
+   835→  // touch hooks (called from ui.ts)
+   836→  touchLook(dx: number, dy: number) { this.look.x += dx * 0.0045; this.look.y += dy * 0.0045; }
+   837→  touchMoveVec(x: number, y: number) { this.touchMove.x = x; this.touchMove.y = y; }
+   838→  setButton(name: string, down: boolean) { this.buttons[name] = down; if (down && this.onKeyExtra) this.onKeyExtra('T_' + name); }
+   839→
+   840→  consumeLook(): { x: number, y: number } {
+   841→    const r = { x: this.look.x, y: this.look.y };
+   842→    this.look.x = 0; this.look.y = 0;
+   843→    return r;
+   844→  }
+   845→  moveVector(): { x: number, y: number } {
+   846→    let x = 0, y = 0;
+   847→    if (this.keys['KeyW'] || this.keys['ArrowUp']) y -= 1;
+   848→    if (this.keys['KeyS'] || this.keys['ArrowDown']) y += 1;
+   849→    if (this.keys['KeyA'] || this.keys['ArrowLeft']) x -= 1;
+   850→    if (this.keys['KeyD'] || this.keys['ArrowRight']) x += 1;
+   851→    const len = Math.hypot(x, y);
+   852→    if (len > 1) { x /= len; y /= len; }
+   853→    if (Math.hypot(this.touchMove.x, this.touchMove.y) > 0.12) { x = this.touchMove.x; y = this.touchMove.y; }
+   854→    return { x, y };
+   855→  }
+   856→  down(code: string) { return !!this.keys[code] || !!this.buttons[code]; }
+   857→}
+   858→
+   859→/* ---------------- touch control layout (draggable / resizable, persisted) ---------------- */
+   860→export interface TouchBtnLayout { x: number; y: number; scale: number }
+   861→export type TouchLayout = Record<string, TouchBtnLayout>;
+   862→const LAYOUT_KEY = 'hv_touch_layout_v1';
+   863→export function loadTouchLayout(): TouchLayout | null {
+   864→  try {
+   865→    const raw = localStorage.getItem(LAYOUT_KEY);
+   866→    if (raw) return JSON.parse(raw) as TouchLayout;
+   867→  } catch { /* ignore */ }
+   868→  return null;
+   869→}
+   870→export function saveTouchLayout(l: TouchLayout) {
+   871→  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(l)); } catch { /* ignore */ }
+   872→}
+   873→export function clearTouchLayout() { try { localStorage.removeItem(LAYOUT_KEY); } catch { /* ignore */ } }
+   874→
+   875→/* ---------------- vector icon set (inline SVG) for touch buttons & UI ---------------- */
+   876→const RAW_ICONS: Record<string, string> = {
+   877→  run: '<circle cx="15.5" cy="4.5" r="2" fill="currentColor" stroke="none"/><path d="M4 21.5l4.5-7-2-3.5 4-4.5 3.5 3 4.5 1.2"/><path d="M10.5 10.5L7 14l-3.5-.8"/><path d="M12.5 9.5l-1.5 6 3.5 2.5 1 4"/>',
+   878→  crouch: '<circle cx="12" cy="5" r="2" fill="currentColor" stroke="none"/><path d="M12 7.5v4l-3.5 2.5 1 6"/><path d="M12 11.5l3.5 2.5-1 6"/><path d="M5 21.5h14"/>',
+   879→  attack: '<path d="M4 20L17 4l3 3L8 21l-5 1z"/><path d="M14 7l3 3"/>',
+   880→  interact: '<path d="M8 12V5.5a1.5 1.5 0 013 0V11"/><path d="M11 11V4.5a1.5 1.5 0 013 0V11"/><path d="M14 11V6a1.5 1.5 0 013 0v6.5"/><path d="M17 12.5l2.2-1.8c.9-.7 2 .4 1.4 1.4L17 19c-1 1.6-2.6 2.5-4.5 2.5H10c-2 0-3.4-.8-4.5-2.5L3.6 15c-.6-1 .5-2.1 1.4-1.4L8 16"/>',
+   881→  reload: '<path d="M19.5 12a7.5 7.5 0 11-2.2-5.3"/><path d="M19.5 3.5v4h-4"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+   882→  flash: '<path d="M6 3h8l2 4v2l-2 2v10a2 2 0 01-2 2h-4a2 2 0 01-2-2V11L6 9V7z"/><path d="M6 7h10"/><path d="M9 13h2"/>',
+   883→  cam: '<path d="M4 9a8 8 0 0114-3"/><path d="M18 2.5V6h-3.5"/><path d="M20 15a8 8 0 01-14 3"/><path d="M6 21.5V18h3.5"/>',
+   884→  grenade: '<circle cx="10.5" cy="14.5" r="6"/><path d="M13 9l2-3 3-1"/><path d="M18 5l1.5-1.5"/><path d="M8.5 12.5a3 3 0 013-2"/>',
+   885→  heal: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>',
+   886→  pause: '<rect x="6.5" y="4.5" width="4" height="15" rx="1"/><rect x="13.5" y="4.5" width="4" height="15" rx="1"/>',
+   887→  throw: '<path d="M3 19c3-6 8-10 14-11"/><path d="M15 6l4 1 1 4-3 2-3-3z"/><circle cx="6" cy="19" r="1.5" fill="currentColor" stroke="none"/>',
+   888→  map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+   889→  quest: '<path d="M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/><path d="M14.5 17.5l1.5 1.5 3-3"/>',
+   890→  dynamo: '<circle cx="12" cy="13" r="7"/><path d="M12 6V3"/><path d="M9 3h6"/><path d="M12 13l3-2.5"/>',
+   891→  radio: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M6 8l9-5"/><circle cx="8" cy="14" r="2.4"/><path d="M14 12h4M14 15h4"/>',
+   892→  breath: '<path d="M3 8h7a2.5 2.5 0 100 5H5"/><path d="M3 17h9a3 3 0 110 6"/><path d="M16 6c2.5 0 2.5 4 0 4s-2.5 4 0 4 2.5 4 0 4"/>',
+   893→  edit: '<path d="M12 3l1.2 3 3.2-.8 1.4 2.8 3 1.2-1.2 3 2.4 2.3-2.4 2.3 1.2 3-3 1.2-1.4 2.8-3.2-.8L12 27" transform="scale(0.82) translate(2.6 -1)"/><circle cx="12" cy="12" r="3"/>',
+   894→  swap: '<path d="M6 8h10l-2.5-2.5M18 16H8l2.5 2.5"/><path d="M16 8a7 7 0 01-8 11"/><path d="M8 16a7 7 0 018-11"/>',
+   895→  torch: '<path d="M12 2c2.8 3 4.5 5.2 4.5 8a4.5 4.5 0 11-9 0c0-2.8 1.7-5 4.5-8z"/><path d="M12 21v-5"/><path d="M9 22h6"/>',
+   896→  axe: '<path d="M13 6l6 6"/><path d="M11 8l5-5c2 1 3.5 2.5 4.5 4.5L15 12z"/><path d="M12 9L4 20l1.5 1.5L15 12"/>',
+   897→  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+   898→  battery: '<rect x="3" y="8" width="16" height="8" rx="2"/><path d="M21 10.5v3"/><path d="M7 10.5v3M10.5 10.5v3"/>',
+   899→  skull: '<path d="M12 3a7 7 0 00-7 7c0 2.6 1.4 4.4 3 5.4V19h8v-3.6c1.6-1 3-2.8 3-5.4a7 7 0 00-7-7z"/><circle cx="9.5" cy="11" r="1.4" fill="currentColor" stroke="none"/><circle cx="14.5" cy="11" r="1.4" fill="currentColor" stroke="none"/><path d="M10 19v2M14 19v2"/>',
+   900→  drop: '<path d="M12 3s6 7 6 11a6 6 0 11-12 0c0-4 6-11 6-11z"/>',
+   901→  bone: '<path d="M7 10l7-7 3 3-7 7"/><path d="M7 10c-2 0-3.5 1.5-3.5 3.5S5 17 7 17s3.5-1.5 3.5-3.5"/><path d="M17 14c2 0 3.5 1.5 3.5 3.5S19 21 17 21s-3.5-1.5-3.5-3.5"/><path d="M10 13.5L13.5 17"/>',
+   902→  eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/>',
+   903→  film: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M8 20c.8-2.4 2.2-3.6 4-3.6s3.2 1.2 4 3.6"/>',
+   904→};
+   905→
+   906→export function iconSvg(name: string, size = 24): string {
+   907→  const body = RAW_ICONS[name] || RAW_ICONS.interact;
+   908→  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:block">${body}</svg>`;
+   909→}
+   910→export function hasIcon(name: string): boolean { return !!RAW_ICONS[name]; }
+   911→
