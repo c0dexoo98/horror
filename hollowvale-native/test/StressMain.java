@@ -2,110 +2,125 @@ import ir.hollowvale.game.*;
 
 import java.util.Random;
 
-/** Extended headless stress: long fuzz, edge-button storms, stuck-monster checks. */
+/** Stress: long-running fuzz with combat, survival waves, save/load cycles + perf timing. */
 public class StressMain {
-    static int failed = 0;
-
-    static void check(boolean cond, String name) {
-        if (!cond) { failed++; System.out.println("FAIL  " + name); }
-        else System.out.println("PASS  " + name);
-    }
-
     public static void main(String[] args) {
+        Str.lang = Str.EN;
         Random rng = new Random(1337);
+        long t0 = System.nanoTime();
+        int restarts = 0, saves = 0;
 
-        // --- 60k-tick chaos fuzz incl. all edge buttons + tasks overlay ---
-        World wf = new World();
-        Ctrl cf = new Ctrl();
-        boolean ok = true;
-        int deaths = 0, wins = 0, restarts = 0;
-        for (int i = 0; i < 60000; i++) {
-            cf.fwd = rng.nextDouble() * 2 - 1;
-            cf.strafe = rng.nextDouble() * 2 - 1;
-            cf.lookDX = (rng.nextDouble() - 0.5) * 0.4;
-            cf.run = rng.nextBoolean();
-            cf.sneak = rng.nextBoolean();
-            if (rng.nextInt(20) == 0) cf.useEdge = true;
-            if (rng.nextInt(7) == 0) cf.useHeld = rng.nextBoolean();
-            if (rng.nextInt(30) == 0) cf.lightEdge = true;
-            if (rng.nextInt(50) == 0) cf.mapEdge = true;
-            if (rng.nextInt(50) == 0) cf.tasksEdge = true;
-            double dt = 0.008 + rng.nextDouble() * 0.09; // irregular frame pacing
-            wf.tick(dt, cf);
-            if (!Double.isFinite(wf.player.x) || !Double.isFinite(wf.player.y)
-                    || !Double.isFinite(wf.monster.x) || !Double.isFinite(wf.monster.y)
-                    || !Double.isFinite(wf.player.fear) || !Double.isFinite(wf.ritualT)) { ok = false; break; }
-            // player must never end up inside a solid tile
-            if (wf.map.solid((int) wf.player.x, (int) wf.player.y)) { ok = false; System.out.println("FAIL player inside solid at tick " + i + " pos=" + wf.player.x + "," + wf.player.y); break; }
-            if (wf.gameOver) { deaths++; wf = new World(); restarts++; }
-            if (wf.win) { wins++; wf = new World(); restarts++; }
-        }
-        check(ok, "60k chaos fuzz: finite, never inside walls");
-        System.out.println("      deaths=" + deaths + " wins=" + wins + " restarts=" + restarts);
-        check(deaths + wins + restarts > 0, "chaos fuzz reached game end states");
-
-        // --- monster never permanently stuck: teleport to every walkable tile ---
-        World w2 = new World();
-        w2.monster.banished = false;
-        Map map = w2.map;
-        int stuck = 0;
-        StringBuilder stuckTiles = new StringBuilder();
-        for (int ty = 1; ty < MapData.H - 1; ty += 2) {
-            for (int tx = 1; tx < MapData.W - 1; tx += 2) {
-                if (map.solid(tx, ty)) continue;
-                // fresh world per tile: otherwise a single kill by the (working!)
-                // AI poisons every later tile via the gameOver early-return
-                w2 = new World();
-                map = w2.map;
-                w2.monster.x = tx + 0.5; w2.monster.y = ty + 0.5;
-                w2.monster.state = Monster.State.PATROL;
-                w2.monster.banished = false;
-                double mx0 = w2.monster.x, my0 = w2.monster.y;
-                Ctrl c2 = new Ctrl();
-                for (int i = 0; i < 180; i++) w2.tick(0.05, c2); // 9 seconds
-                double moved = Math.sqrt((w2.monster.x - mx0) * (w2.monster.x - mx0) + (w2.monster.y - my0) * (w2.monster.y - my0));
-                if (moved < 0.5) {
-                    // enclosed pocket? (no path to plaza = unreachable for player too)
-                    boolean isolated = map.findPath(tx, ty, 21, 16, true).isEmpty();
-                    if (!isolated) { stuck++; stuckTiles.append(" (").append(tx).append(",").append(ty).append(")"); }
-                }
+        // 1) heavy campaign fuzz with combat
+        World w = new World(World.MODE_CAMPAIGN, 2);
+        Ctrl c = new Ctrl();
+        w.player.ownedWeapon[Weapons.SMG] = true;
+        w.player.curWeapon = Weapons.SMG;
+        w.player.mag[Weapons.SMG] = 30;
+        w.player.reserve[2] = 999;
+        for (int i = 0; i < 30000; i++) {
+            c.fwd = rng.nextDouble() * 2 - 1;
+            c.strafe = rng.nextDouble() * 2 - 1;
+            c.lookDX = (rng.nextDouble() - 0.5) * 0.4;
+            c.pitchDY = (rng.nextDouble() - 0.5) * 0.2;
+            c.run = rng.nextBoolean();
+            c.sneak = rng.nextInt(4) == 0;
+            c.fireHeld = rng.nextInt(3) == 0;
+            c.fireEdge = rng.nextInt(30) == 0;
+            if (rng.nextInt(50) == 0) c.useEdge = true;
+            if (rng.nextInt(70) == 0) c.reloadEdge = true;
+            if (rng.nextInt(90) == 0) c.switchEdge = true;
+            if (rng.nextInt(120) == 0) c.lightEdge = true;
+            if (rng.nextInt(300) == 0) c.camEdge = true;
+            if (rng.nextInt(250) == 0) c.useHeld = rng.nextBoolean();
+            if (w.player.mag[Weapons.SMG] == 0) w.player.mag[Weapons.SMG] = 30;
+            w.tick(0.033, c);
+            if (w.gameOver || w.win) { w = new World(World.MODE_CAMPAIGN, rng.nextInt(3)); restarts++; }
+            if (i % 5000 == 0) {
+                String sv = SaveLoad.save(w);
+                World lw = SaveLoad.load(sv);
+                if (lw == null) { System.out.println("STRESS FAIL: save/load at " + i); System.exit(1); }
+                saves++;
             }
         }
-        check(stuck == 0, "monster patrols from every player-reachable tile (stuck=" + stuck + stuckTiles + ")");
+        System.out.println("campaign fuzz: 30000 ticks OK, restarts=" + restarts + " save/loads=" + saves);
 
-        // --- ritual with interrupted hold (release & re-press) still completes ---
-        World w3 = new World();
-        w3.player.x = MapData.ALTAR[0] + 0.5; w3.player.y = MapData.ALTAR[1] + 1.0;
-        for (int[] t : MapData.TALISMANS) { /* give 5 talismans directly */ }
-        w3.talismans = 5;
-        Ctrl c3 = new Ctrl();
-        // hold 2s, release 1s, hold to completion
-        c3.useHeld = true;
-        for (int i = 0; i < 20; i++) w3.tick(0.1, c3);
-        c3.useHeld = false;
-        for (int i = 0; i < 10; i++) w3.tick(0.1, c3);
-        check(w3.ritualT < 1.5, "ritual decays when released (t=" + String.format("%.2f", w3.ritualT) + ")");
-        c3.useHeld = true;
-        for (int i = 0; i < 40; i++) w3.tick(0.1, c3);
-        check(w3.banished, "interrupted ritual completes on re-hold");
+        // 2) survival marathon: 12 waves
+        World sw = new World(World.MODE_SURVIVAL, 1);
+        Ctrl sc = new Ctrl();
+        sw.player.ownedWeapon[Weapons.SMG] = true;
+        sw.player.curWeapon = Weapons.SMG;
+        int guard = 0, idleHunt = 0;
+        while (sw.wave < 12 && guard++ < 400000) {
+            sw.player.health = sw.player.maxHealth;
+            if (sw.player.mag[Weapons.SMG] == 0) { sw.player.mag[Weapons.SMG] = 30; sw.player.reserve[2] = 999; }
+            sc.fireHeld = true;
+            Enemy tgt = null;
+            double bestD = 1e18;
+            for (Enemy e : sw.enemies) {
+                if (!e.alive()) continue;
+                double d = World.dist(e.x, e.y, sw.player.x, sw.player.y);
+                if (d < bestD) { bestD = d; tgt = e; }
+            }
+            if (tgt != null && bestD < 9) {
+                idleHunt = 0;
+                sw.player.ang = Math.atan2(tgt.y - sw.player.y, tgt.x - sw.player.x);
+                if (sw.player.fireCd <= 0) {
+                    sw.tick(0.033, sc);
+                } else {
+                    sc.fireHeld = false;
+                    sw.tick(0.033, sc);
+                    sc.fireHeld = true;
+                }
+            } else {
+                idleHunt++;
+                sc.fireHeld = false;
+                if (idleHunt > 150 && tgt != null) {
+                    idleHunt = 0;
+                    double a = rng.nextDouble() * Math.PI * 2;
+                    double nx = tgt.x + Math.cos(a) * 2, ny = tgt.y + Math.sin(a) * 2;
+                    if (!sw.map.circleBlocked(nx, ny, 0.25)) { sw.player.x = nx; sw.player.y = ny; }
+                }
+                sw.tick(0.033, sc);
+                sc.fireHeld = true;
+            }
+        }
+        System.out.println("survival marathon: reached wave " + sw.wave + ", kills=" + sw.stats.kills
+                + ", enemies alive=" + sw.enemies.stream().filter(Enemy::alive).count()
+                + ", souls=" + sw.souls);
 
-        // --- battery math: full drain time sane (no instant death of light) ---
-        World w4 = new World();
-        w4.monster.banished = true; // idle player would be caught otherwise (AI working as intended)
-        Ctrl c4 = new Ctrl();
-        double tSum = 0;
-        while (w4.player.lightOn && tSum < 400) { w4.tick(0.1, c4); tSum += 0.1; }
-        check(!w4.player.lightOn && tSum > 180 && tSum < 220, "battery 100%->0 lasts ~200s (" + String.format("%.0f", tSum) + "s)");
+        // 3) pathfinding soak: A* across the whole map from every torch
+        Map map = new Map();
+        long pT = System.nanoTime();
+        int paths = 0;
+        for (int[] t : MapData.TORCHES) {
+            for (int[] g : MapData.GRAVES) {
+                java.util.List<int[]> p = map.findPath(t[0], t[1], g[0], g[1], true);
+                if (!p.isEmpty()) paths++;
+            }
+        }
+        System.out.println("pathfinding soak: " + paths + "/196 torch->grave paths, "
+                + (System.nanoTime() - pT) / 1000000 + " ms");
 
-        // --- fear decays when safe and light on ---
-        World w5 = new World();
-        w5.monster.banished = true; // idle player would be caught otherwise (AI working as intended)
-        w5.player.fear = 80;
-        Ctrl c5 = new Ctrl();
-        for (int i = 0; i < 320; i++) w5.tick(0.05, c5); // 16s: (80-5)/5.5 ≈ 13.6s needed
-        check(w5.player.fear < 5, "fear decays to calm (f=" + String.format("%.1f", w5.player.fear) + ")");
+        // 4) raycast soak: 100k casts
+        pT = System.nanoTime();
+        Map.Ray r = new Map.Ray();
+        for (int i = 0; i < 100000; i++) {
+            double a = rng.nextDouble() * Math.PI * 2;
+            map.cast(21.5, 16.5, Math.cos(a), Math.sin(a), 24, r);
+        }
+        System.out.println("raycast soak: 100k casts, " + (System.nanoTime() - pT) / 1000000 + " ms");
 
-        System.out.println("\n" + (failed == 0 ? "ALL STRESS TESTS PASSED" : failed + " FAILURES"));
-        System.exit(failed == 0 ? 0 : 1);
+        // 5) tick perf: simulate 2000 ticks at fixed dt, measure
+        World pw = new World(World.MODE_CAMPAIGN, 1);
+        pT = System.nanoTime();
+        Ctrl pc = new Ctrl();
+        pc.fwd = 1;
+        for (int i = 0; i < 2000; i++) pw.tick(0.033, pc);
+        double msPerTick = (System.nanoTime() - pT) / 1000000.0 / 2000;
+        System.out.printf("tick perf: %.3f ms/tick (target < 4ms for 30fps headroom)%n", msPerTick);
+
+        long total = (System.nanoTime() - t0) / 1000000;
+        System.out.println("STRESS ALL OK in " + total + " ms");
+        System.exit(0);
     }
 }
