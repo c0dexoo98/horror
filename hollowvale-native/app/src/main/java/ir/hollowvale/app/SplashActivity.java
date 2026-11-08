@@ -3,27 +3,24 @@ package ir.hollowvale.app;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.content.res.AssetFileDescriptor;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.VideoView;
 
 /**
- * HOLLOW VALE v4 — cinematic VIDEO splash (intro/ending).
- * Plays res/raw/intro.mp4 (or ending.mp4), tap-to-skip, and NEVER crashes:
- * any error falls back to an animated canvas splash, then continues.
+ * HOLLOW VALE v4 — cinematic VIDEO splash.
+ * Startup: the user's splash.mp4 (with its own audio), full-bleed cover scaling,
+ * tap-to-skip, and NEVER crashes: any error falls back to an animated canvas
+ * splash, then continues to the next stage.
  */
 public class SplashActivity extends Activity {
-    private VideoView video;
-    private MediaPlayer player;
+    private CoverVideoView video;
     private FallbackSplashView fallback;
     private boolean done = false;
-    private String which = "intro";
+    private String which = "splash";
     private String then = "menu";
 
     @Override
@@ -33,18 +30,35 @@ public class SplashActivity extends Activity {
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         immersive();
         which = getIntent().getStringExtra("video");
-        if (which == null || which.isEmpty()) which = "intro";
+        if (which == null || which.isEmpty()) which = "splash";
         String t2 = getIntent().getStringExtra("then");
         then = t2 == null || t2.isEmpty() ? "menu" : t2;
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(0xFF000000);
-
-        video = new VideoView(this);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-        root.addView(video, lp);
         setContentView(root);
+
+        video = new CoverVideoView(this, which, true, 1.0f, false, new CoverVideoView.Listener() {
+            @Override
+            public void onVideoFailed() {
+                useFallback();
+            }
+        });
+        video.setOnCompleted(new Runnable() {
+            @Override
+            public void run() {
+                finishTo();
+            }
+        });
+        root.addView(video, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        // skip to fallback if the raw file is missing entirely
+        int id = getResources().getIdentifier(which, "raw", getPackageName());
+        if (id == 0) {
+            postFallback();
+        } else {
+            video.start();
+        }
 
         // "skip" button (top-left)
         android.widget.TextView skip = new android.widget.TextView(this);
@@ -53,79 +67,61 @@ public class SplashActivity extends Activity {
         skip.setTextSize(16);
         skip.setTypeface(Fonts.vazirBold(this));
         skip.setPadding(40, 30, 40, 30);
-        root.addView(skip, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT));
         skip.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 finishTo();
             }
         });
+        root.addView(skip, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT));
 
-        boolean started = false;
-        try {
-            int id = getResources().getIdentifier(which, "raw", getPackageName());
-            if (id != 0) {
-                final String path = "android.resource://" + getPackageName() + "/" + id;
-                video.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
-                    @Override
-                    public void onCompletion(MediaPlayer mp) {
-                        finishTo();
-                    }
-                });
-                video.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-                    @Override
-                    public boolean onError(MediaPlayer mp, int what, int extra) {
-                        useFallback();
-                        return true;
-                    }
-                });
-                video.setVideoPath(path);
-                video.start();
-                started = true;
+        // tap anywhere to skip as well
+        root.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishTo();
             }
-        } catch (Throwable ignored) {
-            started = false;
-        }
-        if (!started) useFallback();
+        });
+    }
+
+    private void postFallback() {
+        video.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                useFallback();
+            }
+        }, 120);
     }
 
     private void useFallback() {
         if (done) return;
+        if (fallback != null) return;
         try {
             if (video != null) video.setVisibility(View.GONE);
         } catch (Throwable ignored) {
         }
-        if (fallback == null) {
-            fallback = new FallbackSplashView(this, "ending".equals(which));
-            addContentView(fallback, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-            fallback.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    finishTo();
-                }
-            });
-            // also auto-continue after 5s
-            video.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    finishTo();
-                }
-            }, 5200);
-        }
+        fallback = new FallbackSplashView(this, "ending".equals(which));
+        addContentView(fallback, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        fallback.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishTo();
+            }
+        });
+        // also auto-continue after 5s
+        fallback.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                finishTo();
+            }
+        }, 5200);
     }
 
     private synchronized void finishTo() {
         if (done) return;
         done = true;
-        try {
-            if (player != null) {
-                player.stop();
-                player.release();
-            }
-        } catch (Throwable ignored) {
-        }
         if ("game".equals(then)) {
             startActivity(new Intent(this, GameActivity.class));
         } else {
@@ -143,14 +139,7 @@ public class SplashActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         try {
-            if (video != null) video.stopPlayback();
-        } catch (Throwable ignored) {
-        }
-        try {
-            if (player != null) {
-                player.release();
-                player = null;
-            }
+            if (video != null) video.release();
         } catch (Throwable ignored) {
         }
     }
@@ -162,5 +151,12 @@ public class SplashActivity extends Activity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // true full-bleed: extend into the display notch/cutout area (API 28+)
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
     }
 }

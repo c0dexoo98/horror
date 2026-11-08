@@ -49,6 +49,12 @@ public class FallbackSplashView extends View implements Choreographer.FrameCallb
     }
 
     @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        Choreographer.getInstance().removeFrameCallback(this);
+    }
+
+    @Override
     protected void onDraw(Canvas c) {
         int w = getWidth(), h = getHeight();
         float dp = getResources().getDisplayMetrics().density;

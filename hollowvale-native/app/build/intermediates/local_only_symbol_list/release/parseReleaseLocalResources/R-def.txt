@@ -35,7 +35,7 @@ raw gun_hit
 raw heal_bandage
 raw heartbeat_loop
 raw hurt_player
-raw intro
+raw menubg
 raw mother_hum
 raw music_chase
 raw music_ending
@@ -51,6 +51,7 @@ raw revolver_empty
 raw revolver_shot
 raw save_chime
 raw secret
+raw splash
 raw start_game
 raw step_crouch
 raw step_run

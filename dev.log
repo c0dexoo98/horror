@@ -1,6 +1,6 @@
 ▲ Next.js 16.1.3 (Turbopack)
 - Local:         http://localhost:3000
-- Network:       http://21.0.6.155:3000
+- Network:       http://21.0.9.204:3000
 - Environments: .env
 
 ✓ Starting...
@@ -9,7 +9,7 @@ This information is used to shape Next.js' roadmap and prioritize features.
 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
 https://nextjs.org/telemetry
 
-✓ Ready in 597ms
+✓ Ready in 651ms
 ○ Compiling / ...
 ⨯ ./src/app/page.tsx:10:5
 Module not found: Can't resolve '@/game/main'
@@ -36,7 +36,7 @@ Import traces:
 https://nextjs.org/docs/messages/module-not-found
 
 
- GET / 500 in 4.8s (compile: 4.7s, render: 94ms)
+ GET / 500 in 5.0s (compile: 4.9s, render: 82ms)
 ⨯ ./src/app/page.tsx:10:5
 Module not found: Can't resolve '@/game/main'
 [0m [90m  8 |[39m   useEffect(() [33m=>[39m {
@@ -62,7 +62,7 @@ Import traces:
 https://nextjs.org/docs/messages/module-not-found
 
 
- GET / 500 in 10ms (compile: 4ms, render: 6ms)
+ GET / 500 in 9ms (compile: 5ms, render: 5ms)
 ⨯ ./src/app/page.tsx:10:5
 Module not found: Can't resolve '@/game/main'
 [0m [90m  8 |[39m   useEffect(() [33m=>[39m {
@@ -88,7 +88,7 @@ Import traces:
 https://nextjs.org/docs/messages/module-not-found
 
 
- GET / 500 in 13ms (compile: 5ms, render: 8ms)
+ GET / 500 in 12ms (compile: 5ms, render: 7ms)
 ⨯ ./src/app/page.tsx:10:5
 Module not found: Can't resolve '@/game/main'
 [0m [90m  8 |[39m   useEffect(() [33m=>[39m {
@@ -114,4 +114,136 @@ Import traces:
 https://nextjs.org/docs/messages/module-not-found
 
 
- GET / 500 in 14ms (compile: 6ms, render: 8ms)
+ GET / 500 in 8ms (compile: 4ms, render: 4ms)
+⨯ ./src/app/page.tsx:10:5
+Module not found: Can't resolve '@/game/main'
+[0m [90m  8 |[39m   useEffect(() [33m=>[39m {
+ [90m  9 |[39m     [36mif[39m ([33m![39mref[33m.[39mcurrent) [36mreturn[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m     [36mimport[39m([32m'@/game/main'[39m)[33m.[39mthen(({ launch }) [33m=>[39m {
+ [90m    |[39m     [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 11 |[39m       [36mif[39m (ref[33m.[39mcurrent) launch(ref[33m.[39mcurrent)[33m;[39m
+ [90m 12 |[39m     })[33m;[39m
+ [90m 13 |[39m   }[33m,[39m [])[33m;[39m[0m
+
+Import map: aliased to relative './src/game/main' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET / 500 in 11ms (compile: 5ms, render: 6ms)
+⨯ ./src/app/page.tsx:10:5
+Module not found: Can't resolve '@/game/main'
+[0m [90m  8 |[39m   useEffect(() [33m=>[39m {
+ [90m  9 |[39m     [36mif[39m ([33m![39mref[33m.[39mcurrent) [36mreturn[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m     [36mimport[39m([32m'@/game/main'[39m)[33m.[39mthen(({ launch }) [33m=>[39m {
+ [90m    |[39m     [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 11 |[39m       [36mif[39m (ref[33m.[39mcurrent) launch(ref[33m.[39mcurrent)[33m;[39m
+ [90m 12 |[39m     })[33m;[39m
+ [90m 13 |[39m   }[33m,[39m [])[33m;[39m[0m
+
+Import map: aliased to relative './src/game/main' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET / 500 in 11ms (compile: 6ms, render: 5ms)
+⚠ Cross origin request detected from preview-chat-1e986f0c-1a81-4f8a-b460-c25450e288f6.space-z.ai to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+⨯ ./src/app/page.tsx:10:5
+Module not found: Can't resolve '@/game/main'
+[0m [90m  8 |[39m   useEffect(() [33m=>[39m {
+ [90m  9 |[39m     [36mif[39m ([33m![39mref[33m.[39mcurrent) [36mreturn[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m     [36mimport[39m([32m'@/game/main'[39m)[33m.[39mthen(({ launch }) [33m=>[39m {
+ [90m    |[39m     [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 11 |[39m       [36mif[39m (ref[33m.[39mcurrent) launch(ref[33m.[39mcurrent)[33m;[39m
+ [90m 12 |[39m     })[33m;[39m
+ [90m 13 |[39m   }[33m,[39m [])[33m;[39m[0m
+
+Import map: aliased to relative './src/game/main' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET / 500 in 11ms (compile: 5ms, render: 6ms)
+⨯ ./src/app/page.tsx:10:5
+Module not found: Can't resolve '@/game/main'
+[0m [90m  8 |[39m   useEffect(() [33m=>[39m {
+ [90m  9 |[39m     [36mif[39m ([33m![39mref[33m.[39mcurrent) [36mreturn[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m     [36mimport[39m([32m'@/game/main'[39m)[33m.[39mthen(({ launch }) [33m=>[39m {
+ [90m    |[39m     [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 11 |[39m       [36mif[39m (ref[33m.[39mcurrent) launch(ref[33m.[39mcurrent)[33m;[39m
+ [90m 12 |[39m     })[33m;[39m
+ [90m 13 |[39m   }[33m,[39m [])[33m;[39m[0m
+
+Import map: aliased to relative './src/game/main' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET / 500 in 9ms (compile: 4ms, render: 5ms)
+⨯ ./src/app/page.tsx:10:5
+Module not found: Can't resolve '@/game/main'
+[0m [90m  8 |[39m   useEffect(() [33m=>[39m {
+ [90m  9 |[39m     [36mif[39m ([33m![39mref[33m.[39mcurrent) [36mreturn[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m     [36mimport[39m([32m'@/game/main'[39m)[33m.[39mthen(({ launch }) [33m=>[39m {
+ [90m    |[39m     [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 11 |[39m       [36mif[39m (ref[33m.[39mcurrent) launch(ref[33m.[39mcurrent)[33m;[39m
+ [90m 12 |[39m     })[33m;[39m
+ [90m 13 |[39m   }[33m,[39m [])[33m;[39m[0m
+
+Import map: aliased to relative './src/game/main' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET / 500 in 11ms (compile: 6ms, render: 6ms)

@@ -43,6 +43,8 @@ public class MenuView extends View implements Choreographer.FrameCallback {
 
     private int screen = SCR_START;
     private float screenT = 0; // time since screen switch (for transitions)
+    // when true, a looping video plays BEHIND this view; we only paint scrims/atmosphere
+    private boolean videoBg = false;
 
     // background elements
     private float[][] stars = new float[90][3];
@@ -122,6 +124,11 @@ public class MenuView extends View implements Choreographer.FrameCallback {
             saveHas[i] = SaveIO.exists(act, name);
             saveMeta[i] = saveHas[i] ? SaveIO.meta(act, name) : null;
         }
+    }
+
+    /** Enable/disable cinematic-video-behind-menu mode (fallback switches back to paint). */
+    public void setVideoBackground(boolean on) {
+        videoBg = on;
     }
 
     @Override
@@ -322,6 +329,10 @@ public class MenuView extends View implements Choreographer.FrameCallback {
 
     // ------------------------------------------------ background
     private void drawBackground(Canvas c) {
+        if (videoBg) {
+            drawVideoBackground(c);
+            return;
+        }
         // sky
         p.setShader(new LinearGradient(0, 0, 0, h,
                 Color.rgb(9, 8, 14), Color.rgb(16, 13, 24), Shader.TileMode.CLAMP));
@@ -400,6 +411,62 @@ public class MenuView extends View implements Choreographer.FrameCallback {
             if (d[0] > 1) d[0] -= 1;
             float yy = d[1] * h + 10 * dp * (float) Math.sin(t * 0.6f + d[3]);
             p.setColor(Color.argb((int) (30 + 22 * Math.sin(t * 2 + d[3])), 210, 205, 215));
+            c.drawPoint(d[0] * w, yy, p);
+        }
+    }
+
+    /**
+     * Atmosphere painted OVER the looping background video: soft scrims so the
+     * UI stays readable, plus lightning flashes, drifting fog and dust that
+     * blend the footage into the game's horror mood.
+     */
+    private void drawVideoBackground(Canvas c) {
+        // vertical scrim: darker top & bottom bands, clearer window in the middle
+        p.setShader(new LinearGradient(0, 0, 0, h, new int[]{
+                Color.argb(150, 4, 4, 8),
+                Color.argb(38, 4, 4, 8),
+                Color.argb(20, 4, 4, 8),
+                Color.argb(120, 3, 3, 7)},
+                new float[]{0f, 0.32f, 0.62f, 1f}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        // pulsing red vignette tint (heartbeat of the vale)
+        float beat = 0.5f + 0.5f * (float) Math.sin(t * 1.05);
+        p.setShader(new RadialGradient(w * 0.5f, h * 0.46f, Math.max(w, h) * 0.75f,
+                new int[]{0x00000000,
+                        Color.argb((int) (26 + 14 * beat), 20, 0, 2),
+                        Color.argb((int) (95 + 40 * beat), 8, 0, 1)},
+                null, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        // lightning flash over footage
+        if (lightning > 0) {
+            p.setColor(Color.argb((int) (52 * lightning), 120, 130, 170));
+            c.drawRect(0, 0, w, h, p);
+        }
+        // drifting fog (thinner so the footage stays visible)
+        for (int i = 0; i < 2; i++) {
+            float fy = h * (0.74f + i * 0.14f);
+            p.setColor(Color.argb((int) (20 + 8 * i + 40 * lightning), 120, 120, 135));
+            Path fog = new Path();
+            fog.moveTo(-20, h);
+            float ph1 = fogSeed[i];
+            for (float fx = -20; fx <= w + 40; fx += 26) {
+                float yy = fy + (float) Math.sin(fx * 0.006f / dp * 0.3f + t * (0.22f + i * 0.1f) + ph1) * (10 + i * 7) * dp
+                        + (float) Math.sin(fx * 0.0017f + t * 0.1f + ph1 * 2f) * 16 * dp;
+                fog.lineTo(fx, yy);
+            }
+            fog.lineTo(w + 40, h);
+            fog.close();
+            c.drawPath(fog, p);
+        }
+        // floating dust catching the light
+        for (float[] d : dust) {
+            d[0] += d[2] * 0.016f;
+            if (d[0] < 0) d[0] += 1;
+            if (d[0] > 1) d[0] -= 1;
+            float yy = d[1] * h + 10 * dp * (float) Math.sin(t * 0.6f + d[3]);
+            p.setColor(Color.argb((int) (26 + 20 * Math.sin(t * 2 + d[3])), 210, 205, 215));
             c.drawPoint(d[0] * w, yy, p);
         }
     }
@@ -596,7 +663,7 @@ public class MenuView extends View implements Choreographer.FrameCallback {
         p.setColor(0x66AAAAAA);
         p.setTextSize(11 * dp);
         p.setTypeface(Fonts.vazir(getContext()));
-        c.drawText("نسخه ۴.۱ — موتور Raycast اختصاصی", w / 2, h - 12 * dp, p);
+        c.drawText("نسخه ۴.۲ — موتور Raycast اختصاصی", w / 2, h - 12 * dp, p);
         p.setTypeface(null);
     }
 
@@ -655,36 +722,52 @@ public class MenuView extends View implements Choreographer.FrameCallback {
     private void drawSettings(Canvas c) {
         setY0 = h * 0.30f;
         setSH = 40 * dp;
-        p.setTextAlign(Paint.Align.RIGHT);
+        float tx0 = 130 * dp, tx1 = w - 130 * dp;
         for (int i = 0; i < 4; i++) {
             float sy = setY0 + i * setSH;
             String name = i == 0 ? Str.SET_SENS : i == 1 ? Str.SET_VOL_MASTER : i == 2 ? Str.SET_VOL_MUSIC : Str.SET_VOL_SFX;
             float v = i == 0 ? cfg.sens / 3f : i == 1 ? cfg.volMaster : i == 2 ? cfg.volMusic : cfg.volSfx;
             String txt = i == 0 ? String.format("%.1f", cfg.sens) : (int) (v * 100) + "٪";
-            p.setColor(0xFFCCCCCC);
-            p.setTextSize(14 * dp);
-            p.setTypeface(Fonts.vazir(getContext()));
-            c.drawText(name, w - 130 * dp, sy + 15 * dp, p);
-            c.drawText(txt, 130 * dp, sy + 15 * dp, p);
+            // track FIRST, labels ON TOP (fix: text was buried under the track)
             p.setColor(0xFF202028);
-            c.drawRoundRect(130 * dp, sy, w - 130 * dp, sy + 22 * dp, 11, 11, p);
+            c.drawRoundRect(tx0, sy, tx1, sy + 22 * dp, 11, 11, p);
             p.setColor(0xFF7A2A2A);
-            c.drawRoundRect(130 * dp, sy, 130 * dp + (w - 260 * dp) * v, sy + 22 * dp, 11, 11, p);
+            c.drawRoundRect(tx0, sy, tx0 + (tx1 - tx0) * v, sy + 22 * dp, 11, 11, p);
             p.setColor(0xFFE8E0C8);
-            c.drawCircle(130 * dp + (w - 260 * dp) * v, sy + 11 * dp, 8 * dp, p);
+            c.drawCircle(tx0 + (tx1 - tx0) * v, sy + 11 * dp, 8 * dp, p);
+            // labels on top of the track, with a soft shadow for readability
+            p.setShadowLayer(5 * dp, 0, 0, 0xB4000000);
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setColor(0xFFEDE5CF);
+            p.setTextSize(14 * dp);
+            p.setTypeface(Fonts.vazirBold(getContext()));
+            c.drawText(name, tx1 - 14 * dp, sy + 16 * dp, p);
+            p.setTextAlign(Paint.Align.LEFT);
+            p.setTypeface(Fonts.vazir(getContext()));
+            p.setColor(0xFFD8D0B8);
+            c.drawText(txt, tx0 + 14 * dp, sy + 16 * dp, p);
+            p.setShadowLayer(0, 0, 0, 0);
+            p.setTypeface(null);
         }
         float qy = setY0 + 4 * setSH;
+        p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(0xFFCCCCCC);
         p.setTextSize(14 * dp);
+        p.setTypeface(Fonts.vazirBold(getContext()));
         c.drawText(Str.SET_QUALITY, w - 130 * dp, qy + 18 * dp, p);
+        p.setTypeface(null);
         String[] qs = {Str.QUALITY_LOW, Str.QUALITY_MED, Str.QUALITY_HIGH};
         for (int i = 0; i < 3; i++) {
             float bx = w * 0.5f + (i - 1) * 90 * dp;
             p.setColor(cfg.quality == i ? 0xFF7A2A2A : 0xFF202028);
             c.drawRoundRect(bx - 40 * dp, qy, bx + 40 * dp, qy + 26 * dp, 8, 8, p);
+            // fix: center-align the quality labels (were right-aligned → off-center)
+            p.setTextAlign(Paint.Align.CENTER);
             p.setColor(cfg.quality == i ? 0xFFFFE0C0 : 0xFF999999);
             p.setTextSize(12 * dp);
+            p.setTypeface(Fonts.vazir(getContext()));
             c.drawText(qs[i], bx, qy + 17 * dp, p);
+            p.setTypeface(null);
         }
         for (int i = 0; i < 5; i++) {
             float ty = qy + 40 * dp + i * 32 * dp;
@@ -692,16 +775,23 @@ public class MenuView extends View implements Choreographer.FrameCallback {
                     : i == 3 ? Str.SET_VIBRATE : Str.SET_SHOWFPS;
             boolean val = i == 0 ? cfg.fog : i == 1 ? cfg.grain : i == 2 ? cfg.invertLook
                     : i == 3 ? cfg.vibrate : cfg.showFps;
+            // pill on the right edge; label sits to its LEFT (no overlap)
+            p.setTextAlign(Paint.Align.RIGHT);
             p.setColor(0xFFCCCCCC);
             p.setTextSize(13 * dp);
-            c.drawText(name, w - 40 * dp, ty + 18 * dp, p);
+            p.setTypeface(Fonts.vazir(getContext()));
+            c.drawText(name, w - 160 * dp, ty + 18 * dp, p);
+            p.setTypeface(null);
             p.setColor(val ? 0xFF3F9B4F : 0xFF553333);
             c.drawRoundRect(w - 150 * dp, ty, w - 40 * dp, ty + 26 * dp, 13 * dp, 13 * dp, p);
+            // fix: center ON/OFF inside the pill (was right-aligned → off-center)
+            p.setTextAlign(Paint.Align.CENTER);
             p.setColor(0xFFFFFFFF);
             p.setTextSize(11 * dp);
+            p.setTypeface(Fonts.vazirBold(getContext()));
             c.drawText(val ? Str.ON : Str.OFF, w - 95 * dp, ty + 17 * dp, p);
+            p.setTypeface(null);
         }
-        p.setTypeface(null);
     }
 
     private void drawAch(Canvas c) {

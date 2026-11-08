@@ -1,5 +1,5 @@
 #!/bin/bash
-# HOLLOW VALE v3 — official Gradle build (SDK + JDK21 + Gradle 8.7 + AGP 8.4.2)
+# HOLLOW VALE v4 — official Gradle build (SDK + JDK21 + Gradle 8.7 + AGP 8.4.2)
 set -e
 export JAVA_HOME=/home/z/jdk-21.0.13+9
 export ANDROID_HOME=/home/z/android-sdk

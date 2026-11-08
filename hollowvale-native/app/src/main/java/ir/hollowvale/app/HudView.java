@@ -36,6 +36,7 @@ public class HudView extends View {
     public GameActivity act;
 
     private final Input input = new Input();
+    private final Input tickInput = new Input(); // separate copy passed to world.tick
     private Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Bitmap sprites;
     private float dp; // density scale
@@ -301,15 +302,18 @@ public class HudView extends View {
     // -------------------------------------------------- per-frame (GL thread)
     public void frame(float dt) {
         if (paused) return;
-        collect(input);
+        // FIX: collect into a SEPARATE object. Passing `input` as both source and
+        // destination wiped every edge flag (interact/attack/gun/camera/struggle)
+        // BEFORE world.tick saw it — cutscene/dialogue/note taps and attacks never fired.
+        collect(tickInput);
         world.cfgSens = cfg.sens;
         world.cfgInvert = cfg.invertLook;
         try {
-            world.tick(dt, input);
+            world.tick(dt, tickInput);
         } catch (Throwable t) {
             // never kill the render loop
         }
-        input.consumeEdges();
+        tickInput.consumeEdges();
         drainAudio();
         if (world.autoSaveFlag) {
             world.autoSaveFlag = false;
@@ -910,15 +914,22 @@ public class HudView extends View {
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(0xFFCCCCCC);
         p.setTextSize(13 * dp);
+        p.setTypeface(Fonts.vazirBold(getContext()));
         c.drawText(Str.SET_QUALITY, w - 40 * dp, y + 14 * dp, p);
+        p.setTypeface(null);
         String[] qs = {Str.QUALITY_LOW, Str.QUALITY_MED, Str.QUALITY_HIGH};
         for (int i = 0; i < 3; i++) {
             float bx = w * 0.55f - i * 80 * dp;
             boolean sel = cfg.quality == i;
             p.setColor(sel ? 0xFF7A2A2A : 0xFF202028);
             c.drawRoundRect(bx - 34 * dp, y, bx + 34 * dp, y + 26 * dp, 8, 8, p);
+            // fix: center-align quality labels
+            p.setTextAlign(Paint.Align.CENTER);
             p.setColor(sel ? 0xFFFFE0C0 : 0xFF999999);
+            p.setTextSize(12 * dp);
+            p.setTypeface(Fonts.vazir(getContext()));
             c.drawText(qs[i], bx, y + 17 * dp, p);
+            p.setTypeface(null);
         }
         // toggles
         for (int i = 0; i < 5; i++) {
@@ -935,12 +946,18 @@ public class HudView extends View {
             p.setTextAlign(Paint.Align.RIGHT);
             p.setColor(0xFFCCCCCC);
             p.setTextSize(13 * dp);
+            p.setTypeface(Fonts.vazir(getContext()));
             c.drawText(name, w - 40 * dp, ty + 18 * dp, p);
+            p.setTypeface(null);
             p.setColor(val ? 0xFF3F9B4F : 0xFF553333);
             c.drawRoundRect(40 * dp, ty, 110 * dp, ty + 26 * dp, 13 * dp, 13 * dp, p);
+            // fix: center ON/OFF inside the pill
+            p.setTextAlign(Paint.Align.CENTER);
             p.setColor(0xFFFFFFFF);
             p.setTextSize(11 * dp);
+            p.setTypeface(Fonts.vazirBold(getContext()));
             c.drawText(val ? Str.ON : Str.OFF, 75 * dp, ty + 17 * dp, p);
+            p.setTypeface(null);
         }
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFF888888);
@@ -954,18 +971,25 @@ public class HudView extends View {
 
     private void slider(Canvas c, int idx, String name, float v01, String txt) {
         float y = sliderY0 + idx * sliderH;
-        p.setTextAlign(Paint.Align.RIGHT);
-        p.setColor(0xFFCCCCCC);
-        p.setTextSize(13 * dp);
-        c.drawText(name, w - 40 * dp, y + 14 * dp, p);
-        p.setTextAlign(Paint.Align.LEFT);
-        c.drawText(txt, 40 * dp, y + 14 * dp, p);
+        // FIX: track FIRST, labels ON TOP (text was buried under the track)
         p.setColor(0xFF202028);
         c.drawRoundRect(120 * dp, y, w - 120 * dp, y + 20 * dp, 10, 10, p);
         p.setColor(0xFF7A2A2A);
         c.drawRoundRect(120 * dp, y, 120 * dp + (w - 240 * dp) * Math.max(0, Math.min(1, v01)), y + 20 * dp, 10, 10, p);
         p.setColor(0xFFE8E0C8);
         c.drawCircle(120 * dp + (w - 240 * dp) * Math.max(0, Math.min(1, v01)), y + 10 * dp, 9 * dp, p);
+        p.setShadowLayer(5 * dp, 0, 0, 0xB4000000);
+        p.setTextAlign(Paint.Align.RIGHT);
+        p.setColor(0xFFEDE5CF);
+        p.setTextSize(13 * dp);
+        p.setTypeface(Fonts.vazirBold(getContext()));
+        c.drawText(name, w - 40 * dp, y + 15 * dp, p);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTypeface(Fonts.vazir(getContext()));
+        p.setColor(0xFFD8D0B8);
+        c.drawText(txt, 40 * dp, y + 15 * dp, p);
+        p.setShadowLayer(0, 0, 0, 0);
+        p.setTypeface(null);
     }
 
     private boolean settingsTap(float x, float y) {
@@ -990,7 +1014,9 @@ public class HudView extends View {
         }
         float qy = sliderY0 + 4 * sliderH;
         if (y >= qy && y <= qy + 26 * dp && x >= w * 0.55f - 240 * dp && x <= w * 0.55f + 34 * dp) {
-            int i = (int) Math.round((w * 0.55f - x) / 80 * dp / dp);
+            // fix: divide by (80 * dp) — the old `/80 * dp / dp` cancelled dp and
+            // selected the wrong quality pill on any device with density ≠ 1
+            int i = (int) Math.round((w * 0.55f - x) / (80 * dp));
             if (i >= 0 && i <= 2 && i != cfg.quality) {
                 cfg.quality = i;
                 SaveIO.saveConfig(act, cfg);
