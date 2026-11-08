@@ -505,7 +505,7 @@ public class HudView extends View {
             c.drawCircle(b.x, b.y, b.r, p);
             p.setStyle(Paint.Style.FILL);
             if (b.icon >= 0 && sprites != null) {
-                int ts = 64;
+                int ts = 128;
                 int tx = (b.icon % 8) * ts, ty = (b.icon / 8) * ts;
                 Rect src = new Rect(tx, ty, tx + ts, ty + ts);
                 float s = b.r * 1.35f;
@@ -650,7 +650,7 @@ public class HudView extends View {
         p.setTypeface(null);
         // keypad
         float kw = Math.min(w * 0.7f, 340 * dp);
-        float kh = kh = kw * 0.62f;
+        float kh = kw * 0.62f;
         float kx = (w - kw) / 2, ky = h * 0.36f;
         p.setColor(0xFF2A2A30);
         p.setTextAlign(Paint.Align.CENTER);
@@ -895,109 +895,120 @@ public class HudView extends View {
 
     private float sliderY0, sliderH;
 
+    // ------------- in-game quick settings — two-column adaptive layout -------------
+    // metrics: [0]x0 [1]x1 [2]y0 [3]rowH [5]qw [7]togH [9]pillW [10]qx1
+    private float[] setMetrics() {
+        float m = 22 * dp;
+        float x0 = m, x1 = w * 0.5f - 20 * dp;
+        float qx0 = w * 0.5f + 20 * dp, qx1 = w - m;
+        float y0 = Math.max(h * 0.17f, 52 * dp);
+        float rowH = Math.min(46 * dp, (h - y0 - 46 * dp) / 4f);
+        float qw = Math.min(60 * dp, (qx1 - qx0) / 3.8f);
+        float togH = Math.min(32 * dp, (h - y0 - 56 * dp) / 5f);
+        float pillW = Math.min(56 * dp, (qx1 - qx0) * 0.22f);
+        return new float[]{x0, x1, y0, rowH, y0, qw, qx0, togH, qx0, pillW, qx1};
+    }
+
     private void drawSettings(Canvas c) {
         c.drawColor(0xE808080C);
         p.setTextAlign(Paint.Align.CENTER);
         p.setTypeface(Fonts.vazirBold(getContext()));
-        p.setTextSize(20 * dp);
+        p.setTextSize(18 * dp);
         p.setColor(0xFFE8E0C8);
-        c.drawText("تنظیمات", w / 2, h * 0.10f, p);
+        c.drawText("\u062A\u0646\u0638\u06CC\u0645\u0627\u062A", w / 2, 30 * dp, p);
         p.setTypeface(null);
-        sliderY0 = h * 0.16f;
-        sliderH = 44 * dp;
-        slider(c, 0, Str.SET_SENS, cfg.sens / 3f, String.format("%.1f", cfg.sens));
-        slider(c, 1, Str.SET_VOL_MASTER, cfg.volMaster, pct(cfg.volMaster));
-        slider(c, 2, Str.SET_VOL_MUSIC, cfg.volMusic, pct(cfg.volMusic));
-        slider(c, 3, Str.SET_VOL_SFX, cfg.volSfx, pct(cfg.volSfx));
-        // quality row
-        float y = sliderY0 + 4 * sliderH;
-        p.setTextAlign(Paint.Align.RIGHT);
-        p.setColor(0xFFCCCCCC);
-        p.setTextSize(13 * dp);
-        p.setTypeface(Fonts.vazirBold(getContext()));
-        c.drawText(Str.SET_QUALITY, w - 40 * dp, y + 14 * dp, p);
-        p.setTypeface(null);
-        String[] qs = {Str.QUALITY_LOW, Str.QUALITY_MED, Str.QUALITY_HIGH};
-        for (int i = 0; i < 3; i++) {
-            float bx = w * 0.55f - i * 80 * dp;
-            boolean sel = cfg.quality == i;
-            p.setColor(sel ? 0xFF7A2A2A : 0xFF202028);
-            c.drawRoundRect(bx - 34 * dp, y, bx + 34 * dp, y + 26 * dp, 8, 8, p);
-            // fix: center-align quality labels
-            p.setTextAlign(Paint.Align.CENTER);
-            p.setColor(sel ? 0xFFFFE0C0 : 0xFF999999);
-            p.setTextSize(12 * dp);
+        float[] M = setMetrics();
+        float x0 = M[0], x1 = M[1], y0 = M[2], rowH = M[3], qw = M[5], qx1 = M[10];
+        float togH = M[7], pillW = M[9];
+        // left column: sliders
+        for (int i = 0; i < 4; i++) {
+            float sy = y0 + i * rowH;
+            float v = i == 0 ? cfg.sens / 3f : i == 1 ? cfg.volMaster : i == 2 ? cfg.volMusic : cfg.volSfx;
+            String name = i == 0 ? Str.SET_SENS : i == 1 ? Str.SET_VOL_MASTER : i == 2 ? Str.SET_VOL_MUSIC : Str.SET_VOL_SFX;
+            String txt = i == 0 ? String.format("%.1f", cfg.sens) : (int) (v * 100) + "\u066A";
+            float th = Math.min(18 * dp, rowH * 0.38f);
+            float trackY = sy + rowH * 0.55f;
+            p.setColor(0xFF202028);
+            c.drawRoundRect(x0, trackY, x1, trackY + th, th / 2, th / 2, p);
+            p.setColor(0xFF7A2A2A);
+            c.drawRoundRect(x0, trackY, x0 + (x1 - x0) * Math.max(0.02f, v), trackY + th, th / 2, th / 2, p);
+            p.setColor(0xFFE8E0C8);
+            c.drawCircle(x0 + (x1 - x0) * Math.max(0.02f, v), trackY + th / 2, th * 0.44f, p);
+            p.setShadowLayer(5 * dp, 0, 0, 0xB4000000);
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setColor(0xFFEDE5CF);
+            p.setTextSize(Math.min(13 * dp, rowH * 0.36f));
+            p.setTypeface(Fonts.vazirBold(getContext()));
+            c.drawText(name, x1, sy + rowH * 0.34f, p);
+            p.setTextAlign(Paint.Align.LEFT);
             p.setTypeface(Fonts.vazir(getContext()));
-            c.drawText(qs[i], bx, y + 17 * dp, p);
+            p.setColor(0xFFD8D0B8);
+            c.drawText(txt, x0, sy + rowH * 0.34f, p);
+            p.setShadowLayer(0, 0, 0, 0);
             p.setTypeface(null);
         }
-        // toggles
+        // right column: quality pills (RTL row)
+        float qLabelY = y0 + rowH * 0.34f;
+        p.setTextAlign(Paint.Align.RIGHT);
+        p.setColor(0xFFCCCCCC);
+        p.setTextSize(12 * dp);
+        p.setTypeface(Fonts.vazirBold(getContext()));
+        c.drawText(Str.SET_QUALITY, qx1, qLabelY, p);
+        p.setTypeface(null);
+        float qRowY = y0 + rowH * 0.48f;
+        float qPillH = Math.min(24 * dp, rowH * 0.42f);
+        String[] qs = {Str.QUALITY_LOW, Str.QUALITY_MED, Str.QUALITY_HIGH};
+        for (int i = 0; i < 3; i++) {
+            float bx = qx1 - qw * (i + 0.5f) - i * 6 * dp;
+            p.setColor(cfg.quality == i ? 0xFF7A2A2A : 0xFF202028);
+            c.drawRoundRect(bx - qw / 2, qRowY, bx + qw / 2, qRowY + qPillH, 8, 8, p);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setColor(cfg.quality == i ? 0xFFFFE0C0 : 0xFF999999);
+            p.setTextSize(Math.min(10 * dp, qPillH * 0.42f));
+            p.setTypeface(Fonts.vazir(getContext()));
+            c.drawText(qs[i], bx, qRowY + qPillH * 0.68f, p);
+            p.setTypeface(null);
+        }
+        // right column: toggles
+        String[] tnames = {Str.SET_FOG, Str.SET_GRAIN, Str.SET_INVERT, Str.SET_VIBRATE, Str.SET_SHOWFPS};
+        boolean[] tvals = {cfg.fog, cfg.grain, cfg.invertLook, cfg.vibrate, cfg.showFps};
+        float togY0 = qRowY + qPillH + 10 * dp;
+        float pillX0 = qx1 - pillW * 2 - 8 * dp;
         for (int i = 0; i < 5; i++) {
-            float ty = y + 40 * dp + i * 34 * dp;
-            String name;
-            boolean val;
-            switch (i) {
-                case 0: name = Str.SET_FOG; val = cfg.fog; break;
-                case 1: name = Str.SET_GRAIN; val = cfg.grain; break;
-                case 2: name = Str.SET_INVERT; val = cfg.invertLook; break;
-                case 3: name = Str.SET_VIBRATE; val = cfg.vibrate; break;
-                default: name = Str.SET_SHOWFPS; val = cfg.showFps; break;
-            }
+            float ty = togY0 + i * togH;
+            if (ty + 22 * dp > h - 24 * dp) break;
+            float ph = Math.min(22 * dp, togH * 0.76f);
             p.setTextAlign(Paint.Align.RIGHT);
             p.setColor(0xFFCCCCCC);
-            p.setTextSize(13 * dp);
+            p.setTextSize(Math.min(12 * dp, togH * 0.44f));
             p.setTypeface(Fonts.vazir(getContext()));
-            c.drawText(name, w - 40 * dp, ty + 18 * dp, p);
+            c.drawText(tnames[i], qx1, ty + ph * 0.72f, p);
             p.setTypeface(null);
-            p.setColor(val ? 0xFF3F9B4F : 0xFF553333);
-            c.drawRoundRect(40 * dp, ty, 110 * dp, ty + 26 * dp, 13 * dp, 13 * dp, p);
-            // fix: center ON/OFF inside the pill
+            p.setColor(tvals[i] ? 0xFF3F9B4F : 0xFF553333);
+            c.drawRoundRect(pillX0, ty, pillX0 + pillW * 2, ty + ph, ph / 2, ph / 2, p);
             p.setTextAlign(Paint.Align.CENTER);
             p.setColor(0xFFFFFFFF);
-            p.setTextSize(11 * dp);
+            p.setTextSize(Math.min(10 * dp, ph * 0.44f));
             p.setTypeface(Fonts.vazirBold(getContext()));
-            c.drawText(val ? Str.ON : Str.OFF, 75 * dp, ty + 17 * dp, p);
+            c.drawText(tvals[i] ? Str.ON : Str.OFF, pillX0 + pillW, ty + ph * 0.70f, p);
             p.setTypeface(null);
         }
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFF888888);
-        p.setTextSize(12 * dp);
-        c.drawText("بازگشت: لمس جای خالی", w / 2, h - 12 * dp, p);
-    }
-
-    private String pct(float v) {
-        return (int) (v * 100) + "٪";
-    }
-
-    private void slider(Canvas c, int idx, String name, float v01, String txt) {
-        float y = sliderY0 + idx * sliderH;
-        // FIX: track FIRST, labels ON TOP (text was buried under the track)
-        p.setColor(0xFF202028);
-        c.drawRoundRect(120 * dp, y, w - 120 * dp, y + 20 * dp, 10, 10, p);
-        p.setColor(0xFF7A2A2A);
-        c.drawRoundRect(120 * dp, y, 120 * dp + (w - 240 * dp) * Math.max(0, Math.min(1, v01)), y + 20 * dp, 10, 10, p);
-        p.setColor(0xFFE8E0C8);
-        c.drawCircle(120 * dp + (w - 240 * dp) * Math.max(0, Math.min(1, v01)), y + 10 * dp, 9 * dp, p);
-        p.setShadowLayer(5 * dp, 0, 0, 0xB4000000);
-        p.setTextAlign(Paint.Align.RIGHT);
-        p.setColor(0xFFEDE5CF);
-        p.setTextSize(13 * dp);
-        p.setTypeface(Fonts.vazirBold(getContext()));
-        c.drawText(name, w - 40 * dp, y + 15 * dp, p);
-        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(11 * dp);
         p.setTypeface(Fonts.vazir(getContext()));
-        p.setColor(0xFFD8D0B8);
-        c.drawText(txt, 40 * dp, y + 15 * dp, p);
-        p.setShadowLayer(0, 0, 0, 0);
+        c.drawText("\u0628\u0627\u0632\u06AF\u0634\u062A: \u0644\u0645\u0633 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC", w / 2, h - 10 * dp, p);
         p.setTypeface(null);
     }
 
     private boolean settingsTap(float x, float y) {
+        float[] M = setMetrics();
+        float x0 = M[0], x1 = M[1], y0 = M[2], rowH = M[3], qw = M[5], togH = M[7], pillW = M[9], qx1 = M[10];
         for (int i = 0; i < 4; i++) {
-            float sy = sliderY0 + i * sliderH;
-            if (y >= sy - 6 * dp && y <= sy + 28 * dp && x >= 120 * dp && x <= w - 120 * dp) {
-                float v = (x - 120 * dp) / (w - 240 * dp);
-                v = Math.max(0, Math.min(1, v));
+            float sy = y0 + i * rowH;
+            if (y >= sy && y <= sy + rowH && x >= x0 - 8 * dp && x <= x1 + 8 * dp) {
+                float v = (x - x0) / (x1 - x0);
+                v = Math.max(0.02f, Math.min(1f, v));
                 switch (i) {
                     case 0: cfg.sens = 0.2f + v * 2.8f; break;
                     case 1: cfg.volMaster = v; break;
@@ -1012,11 +1023,11 @@ public class HudView extends View {
                 return true;
             }
         }
-        float qy = sliderY0 + 4 * sliderH;
-        if (y >= qy && y <= qy + 26 * dp && x >= w * 0.55f - 240 * dp && x <= w * 0.55f + 34 * dp) {
-            // fix: divide by (80 * dp) — the old `/80 * dp / dp` cancelled dp and
-            // selected the wrong quality pill on any device with density ≠ 1
-            int i = (int) Math.round((w * 0.55f - x) / (80 * dp));
+        float qRowY = y0 + rowH * 0.48f;
+        float qPillH = Math.min(24 * dp, rowH * 0.42f);
+        if (y >= qRowY && y <= qRowY + qPillH && x >= qx1 - qw * 3 - 12 * dp && x <= qx1) {
+            int i = (int) ((qx1 - x) / (qw + 6 * dp));
+            i = Math.max(0, Math.min(2, i));
             if (i >= 0 && i <= 2 && i != cfg.quality) {
                 cfg.quality = i;
                 SaveIO.saveConfig(act, cfg);
@@ -1025,9 +1036,12 @@ public class HudView extends View {
             }
             return true;
         }
+        float togY0 = qRowY + qPillH + 10 * dp;
+        float pillX0 = qx1 - pillW * 2 - 8 * dp;
         for (int i = 0; i < 5; i++) {
-            float ty = qy + 40 * dp + i * 34 * dp;
-            if (y >= ty && y <= ty + 26 * dp && x >= 40 * dp && x <= 110 * dp) {
+            float ty = togY0 + i * togH;
+            float ph = Math.min(22 * dp, togH * 0.76f);
+            if (y >= ty && y <= ty + ph && x >= pillX0 - 8 * dp && x <= qx1) {
                 switch (i) {
                     case 0: cfg.fog = !cfg.fog; break;
                     case 1: cfg.grain = !cfg.grain; break;
@@ -1062,7 +1076,7 @@ public class HudView extends View {
             if (i < world.player.inv.size() && sprites != null) {
                 int t = world.player.inv.get(i);
                 int tile = World.tileForItem(t);
-                int ts = 64;
+                int ts = 128;
                 Rect src = new Rect((tile % 8) * ts, (tile / 8) * ts, (tile % 8) * ts + ts, (tile / 8) * ts + ts);
                 RectF dst = new RectF(cx - cell / 2 + 6, cy - cell / 2 + 6, cx + cell / 2 - 6, cy + cell / 2 - 6);
                 c.drawBitmap(sprites, src, dst, p);

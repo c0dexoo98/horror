@@ -66,6 +66,7 @@ public class SplashActivity extends Activity {
         skip.setTextColor(0xAAE8E0C8);
         skip.setTextSize(16);
         skip.setTypeface(Fonts.vazirBold(this));
+        skip.setTextDirection(View.TEXT_DIRECTION_ANY_RTL);
         skip.setPadding(40, 30, 40, 30);
         skip.setOnClickListener(new View.OnClickListener() {
             @Override

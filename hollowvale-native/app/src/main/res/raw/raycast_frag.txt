@@ -1,8 +1,8 @@
 precision highp float;
 varying vec2 vUV;
-uniform sampler2D uMap;
-uniform sampler2D uAtlas;
-uniform sampler2D uSprites;
+uniform sampler2D uMap;     // R=wall tile, G=door open, B=ceiling tile (0=sky), A=floor tile
+uniform sampler2D uAtlas;   // 8x8 tiles
+uniform sampler2D uSprites; // 8x8 tiles
 uniform vec2 uMapSize;
 uniform vec2 uPos;
 uniform vec2 uDir;
@@ -21,8 +21,21 @@ uniform int uSpriteCount;
 uniform vec3 uSprPTile[24];
 uniform vec3 uSprSShift[24];
 
+const float AD = 8.0; // atlas grid dimension
+
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float vnoise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
 vec3 lighting(vec2 wp) {
@@ -42,13 +55,49 @@ vec3 lighting(vec2 wp) {
         vec2 to = wp - uPos;
         float td = length(to);
         float ca = dot(to / max(td, 0.001), uDir);
-        float cone = smoothstep(0.78, 0.95, ca);
-        float fall = clamp(1.0 - td / 8.5, 0.0, 1.0);
+        float cone = smoothstep(0.72, 0.95, ca);
+        float fall = clamp(1.0 - td / 9.5, 0.0, 1.0);
         float batt = 0.35 + 0.65 * uFlashBat;
         float flick = 0.9 + 0.1 * sin(uTime * 37.0) * uFlashBat;
-        l += vec3(1.0, 0.94, 0.80) * (cone * fall * fall * 1.5 * batt * flick);
+        l += vec3(1.0, 0.94, 0.80) * (cone * fall * fall * 1.7 * batt * flick);
     }
     return l;
+}
+
+// night sky: gradient + drifting clouds + stars + red-tinted moon (world-locked)
+vec3 skyColor(vec2 rd) {
+    float up = clamp((vUV.y - (0.5 - uPitch * 0.5)) * 1.7, 0.0, 1.0);
+    vec3 c = mix(vec3(0.050, 0.060, 0.088), vec3(0.008, 0.010, 0.020), up);
+    // slow clouds
+    float az = atan(rd.y, rd.x);
+    float cl = vnoise2(vec2(az * 2.2, up * 3.0 - uTime * 0.012));
+    cl = cl * 0.6 + vnoise2(vec2(az * 5.0 + 3.7, up * 6.0 - uTime * 0.02)) * 0.4;
+    c += vec3(0.055, 0.060, 0.080) * smoothstep(0.55, 0.85, cl) * (0.35 + 0.4 * up);
+    // stars (stable in world azimuth)
+    vec2 sc = vec2(az * 10.0, up * 9.0);
+    vec2 id = floor(sc);
+    vec2 f2 = fract(sc) - 0.5;
+    float h2 = hash(id);
+    if (h2 > 0.90) {
+        vec2 j = vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5;
+        float m = smoothstep(0.16, 0.02, length(f2 - j * 0.7));
+        float tw = 0.35 + 0.65 * (0.5 + 0.5 * sin(uTime * 2.0 + h2 * 90.0));
+        c += vec3(0.85, 0.88, 1.0) * m * tw * smoothstep(0.08, 0.30, up);
+    }
+    // moon: fixed world direction + elevation
+    vec3 dir3 = normalize(vec3(rd * 0.9, up * 1.1));
+    vec3 mdir = normalize(vec3(0.50, -0.62, 0.42));
+    float ang = dot(dir3, mdir);
+    c += vec3(0.30, 0.18, 0.12) * pow(max(ang, 0.0), 90.0);          // glow
+    float disc = smoothstep(0.99930, 0.99965, ang);
+    c = mix(c, vec3(0.88, 0.74, 0.58), disc);                        // disc
+    float crater = smoothstep(0.99955, 0.99980, dot(dir3, normalize(mdir + vec3(0.010, 0.006, 0.0))));
+    c = mix(c, vec3(0.70, 0.58, 0.46), crater * disc * 0.6);
+    // lightning lift
+    c += vec3(0.28, 0.31, 0.44) * uLightning * 0.7;
+    // haze at horizon
+    c = mix(vec3(0.030, 0.036, 0.052), c, smoothstep(0.0, 0.22, up));
+    return c;
 }
 
 void main() {
@@ -56,6 +105,7 @@ void main() {
     float horizon = 0.5 - uPitch * 0.5;
     vec2 plane = vec2(-uDir.y, uDir.x) * (uFov * uAspect);
     vec2 rd = uDir + plane * ndcX;
+    vec3 fogCol = vec3(0.013, 0.017, 0.027);
 
     // ---------------- DDA ----------------
     int mx = int(floor(uPos.x));
@@ -106,58 +156,77 @@ void main() {
         }
     }
 
-    vec3 col = vec3(0.010, 0.010, 0.016);
-    float fogC = 0.0;
+    vec3 col = vec3(0.008, 0.008, 0.014);
 
     if (hit) {
         float lineH = 1.0 / max(perp, 0.01);
         float v0 = horizon - lineH * 0.5;
         float v1 = horizon + lineH * 0.5;
         float ti = tile;
-        float tu = mod(ti, 4.0);
-        float tv = floor(ti / 4.0);
+        float tu = mod(ti, AD);
+        float tv = floor(ti / AD);
         if (vUV.y > v0 && vUV.y < v1) {
             float ty = clamp((vUV.y - v0) / lineH, 0.0, 1.0);
             float tx = wallX;
             if (side > 0.5 && rd.x > 0.0) tx = 1.0 - tx;
             if (side < 0.5 && rd.y < 0.0) tx = 1.0 - tx;
-            vec2 uv = vec2((tu + tx) * 0.25, 1.0 - (tv + ty) * 0.25);
+            vec2 uv = vec2((tu + tx) * (1.0 / AD), 1.0 - (tv + ty) * (1.0 / AD));
             vec3 tex = texture2D(uAtlas, uv).rgb;
             vec2 wp = uPos + rd * perp;
             vec3 li = lighting(wp);
-            float sideShade = side > 0.5 ? 0.70 : 1.0;
-            fogC = exp(-perp * perp * uFog * 0.016);
-            col = tex * li * sideShade * fogC;
+            float sideShade = side > 0.5 ? 0.76 : 1.0;
+            // contact shadow where wall meets floor/ceiling
+            float ao = 0.60 + 0.40 * smoothstep(0.0, 0.16, ty) * (1.0 - smoothstep(0.84, 1.0, ty));
+            float fogC = exp(-perp * perp * uFog * 0.016);
+            col = mix(fogCol, tex * li * sideShade * ao, fogC);
         } else if (vUV.y >= v1) {
             float rowDist = 0.5 / max(vUV.y - horizon, 0.002);
             if (rowDist < perp) {
                 vec2 fp = uPos + rd * rowDist;
-                vec2 uv = vec2((2.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
-                vec3 tex = texture2D(uAtlas, uv).rgb * 0.60;
+                vec4 cd = texture2D(uMap, (floor(fp) + 0.5) / uMapSize);
+                float fT = floor(cd.a * 255.0 + 0.5);
+                float fu = mod(fT, AD);
+                float fv = floor(fT / AD);
+                vec2 uv = vec2((fu + fract(fp.x)) * (1.0 / AD), 1.0 - (fv + fract(fp.y)) * (1.0 / AD));
+                vec3 tex = texture2D(uAtlas, uv).rgb * 0.62;
                 vec3 li = lighting(fp);
-                fogC = exp(-rowDist * rowDist * uFog * 0.016);
-                col = tex * li * fogC;
+                float fogC = exp(-rowDist * rowDist * uFog * 0.016);
+                col = mix(fogCol, tex * li, fogC);
             }
         } else {
             float rowDist = 0.5 / max(horizon - vUV.y, 0.002);
             if (rowDist < perp) {
                 vec2 fp = uPos + rd * rowDist;
-                vec2 uv = vec2((1.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
-                vec3 tex = texture2D(uAtlas, uv).rgb * 0.16;
-                vec3 li = lighting(fp) * 0.45;
-                fogC = exp(-rowDist * rowDist * uFog * 0.016);
-                col = tex * li * fogC;
+                vec4 cd = texture2D(uMap, (floor(fp) + 0.5) / uMapSize);
+                float cT = floor(cd.b * 255.0 + 0.5);
+                if (cT < 0.5) {
+                    col = skyColor(rd);
+                } else {
+                    float cu = mod(cT, AD);
+                    float cv = floor(cT / AD);
+                    vec2 uv = vec2((cu + fract(fp.x)) * (1.0 / AD), 1.0 - (cv + fract(fp.y)) * (1.0 / AD));
+                    vec3 tex = texture2D(uAtlas, uv).rgb * 0.18;
+                    vec3 li = lighting(fp) * 0.45;
+                    float fogC = exp(-rowDist * rowDist * uFog * 0.016);
+                    col = mix(fogCol, tex * li, fogC);
+                }
             }
         }
     } else {
         if (vUV.y >= horizon) {
             float rowDist = 0.5 / max(vUV.y - horizon, 0.002);
             vec2 fp = uPos + rd * rowDist;
-            vec2 uv = vec2((2.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
-            vec3 tex = texture2D(uAtlas, uv).rgb * 0.60;
+            vec4 cd = texture2D(uMap, (floor(fp) + 0.5) / uMapSize);
+            float fT = floor(cd.a * 255.0 + 0.5);
+            float fu = mod(fT, AD);
+            float fv = floor(fT / AD);
+            vec2 uv = vec2((fu + fract(fp.x)) * (1.0 / AD), 1.0 - (fv + fract(fp.y)) * (1.0 / AD));
+            vec3 tex = texture2D(uAtlas, uv).rgb * 0.62;
             vec3 li = lighting(fp);
-            fogC = exp(-rowDist * rowDist * uFog * 0.016);
-            col = tex * li * fogC;
+            float fogC = exp(-rowDist * rowDist * uFog * 0.016);
+            col = mix(fogCol, tex * li, fogC);
+        } else {
+            col = skyColor(rd);
         }
     }
 
@@ -173,6 +242,7 @@ void main() {
         if (transY <= 0.22 || transY >= perp) continue;
         float sxc = transX / transY;
         float halfW = sss.x * 0.5 / transY;
+        if (sxc + halfW < -1.3 || sxc - halfW > 1.3) continue; // quick reject off-screen
         float x0 = sxc - halfW;
         float x1 = sxc + halfW;
         if (ndcX < x0 || ndcX > x1) continue;
@@ -182,14 +252,15 @@ void main() {
         float top = bottom - hgt;
         if (vUV.y < top || vUV.y > bottom) continue;
         float v = clamp((bottom - vUV.y) / max(hgt, 0.0001), 0.0, 1.0);
-        float tu = mod(spt.z, 8.0);
-        float tv = floor(spt.z / 8.0);
-        vec2 uv = vec2((tu + u) / 8.0, 1.0 - (tv + (1.0 - v)) / 8.0);
+        float tu = mod(spt.z, AD);
+        float tv = floor(spt.z / AD);
+        vec2 uv = vec2((tu + u) / AD, 1.0 - (tv + (1.0 - v)) / AD);
         vec4 tex = texture2D(uSprites, uv);
         if (tex.a < 0.4) continue;
         vec3 li = lighting(spt.xy);
         float fogS = exp(-transY * transY * uFog * 0.013);
-        col = mix(col, tex.rgb * li * sss.z * fogS, 0.94);
+        vec3 sprCol = mix(fogCol, tex.rgb * li * sss.z, fogS);
+        col = mix(col, sprCol, 0.94);
     }
 
     col = max(col, vec3(0.0));

@@ -214,52 +214,6 @@ public class MenuView extends View implements Choreographer.FrameCallback {
         if (s == SCR_SAVES) refreshSaves();
     }
 
-    private void settingsTap(float x, float y) {
-        float y0 = h * 0.30f;
-        float sh = 40 * dp;
-        for (int i = 0; i < 4; i++) {
-            float sy = y0 + i * sh;
-            if (y >= sy && y <= sy + 22 * dp && x >= 130 * dp && x <= w - 130 * dp) {
-                float v = (x - 130 * dp) / (w - 260 * dp);
-                v = Math.max(0.02f, Math.min(1f, v));
-                switch (i) {
-                    case 0: cfg.sens = 0.2f + v * 2.8f; break;
-                    case 1: cfg.volMaster = v; break;
-                    case 2: cfg.volMusic = v; break;
-                    case 3: cfg.volSfx = v; break;
-                }
-                audio.play("ui_move", 0.4f);
-                SaveIO.saveConfig(act, cfg);
-                return;
-            }
-        }
-        float qy = y0 + 4 * sh;
-        for (int i = 0; i < 3; i++) {
-            float bx = w * 0.5f + (i - 1) * 90 * dp;
-            if (x >= bx - 40 * dp && x <= bx + 40 * dp && y >= qy && y <= qy + 26 * dp) {
-                cfg.quality = i;
-                SaveIO.saveConfig(act, cfg);
-                audio.play("ui_select");
-                return;
-            }
-        }
-        for (int i = 0; i < 5; i++) {
-            float ty = qy + 40 * dp + i * 32 * dp;
-            if (x >= w - 150 * dp && x <= w - 40 * dp && y >= ty && y <= ty + 26 * dp) {
-                switch (i) {
-                    case 0: cfg.fog = !cfg.fog; break;
-                    case 1: cfg.grain = !cfg.grain; break;
-                    case 2: cfg.invertLook = !cfg.invertLook; break;
-                    case 3: cfg.vibrate = !cfg.vibrate; break;
-                    case 4: cfg.showFps = !cfg.showFps; break;
-                }
-                audio.play("ui_select", 0.7f);
-                SaveIO.saveConfig(act, cfg);
-                return;
-            }
-        }
-    }
-
     private void savesTap(float x, float y) {
         float bw = Math.min(w * 0.62f, 460 * dp);
         float bh = 52 * dp;
@@ -663,7 +617,7 @@ public class MenuView extends View implements Choreographer.FrameCallback {
         p.setColor(0x66AAAAAA);
         p.setTextSize(11 * dp);
         p.setTypeface(Fonts.vazir(getContext()));
-        c.drawText("نسخه ۴.۲ — موتور Raycast اختصاصی", w / 2, h - 12 * dp, p);
+        c.drawText("نسخه ۵.۰ — موتور Raycast اختصاصی", w / 2, h - 12 * dp, p);
         p.setTypeface(null);
     }
 
@@ -717,80 +671,156 @@ public class MenuView extends View implements Choreographer.FrameCallback {
         }
     }
 
-    private float setY0, setSH;
+    // ------------- settings — two-column adaptive layout (never overflows) -------------
+    // metrics: [0]x0 [1]x1 [2]y0 [3]rowH [4]qy [5]qw [6]qx0 [7]togH [8]pillX0 [9]pillW [10]qx1
+    private float[] setMetrics() {
+        float m = 22 * dp;
+        float x0 = m, x1 = w * 0.5f - 20 * dp;          // left column: sliders
+        float qx0 = w * 0.5f + 20 * dp, qx1 = w - m;    // right column: quality + toggles
+        float y0 = Math.max(h * 0.16f, 48 * dp);
+        float rowH = Math.min(50 * dp, (h - y0 - 44 * dp) / 4f);
+        float qw = Math.min(64 * dp, (qx1 - qx0) / 3.8f);
+        float togH = Math.min(34 * dp, (h - y0 - 52 * dp) / 5f);
+        float pillW = Math.min(56 * dp, (qx1 - qx0) * 0.22f);
+        return new float[]{x0, x1, y0, rowH, y0, qw, qx0, togH, qx0, pillW, qx1};
+    }
 
     private void drawSettings(Canvas c) {
-        setY0 = h * 0.30f;
-        setSH = 40 * dp;
-        float tx0 = 130 * dp, tx1 = w - 130 * dp;
+        float[] M = setMetrics();
+        float x0 = M[0], x1 = M[1], y0 = M[2], rowH = M[3], qw = M[5], qx1 = M[10];
+        float togH = M[7], pillW = M[9];
+        // ---- left column: 4 sliders (label row above the track, never overlapped)
         for (int i = 0; i < 4; i++) {
-            float sy = setY0 + i * setSH;
+            float sy = y0 + i * rowH;
             String name = i == 0 ? Str.SET_SENS : i == 1 ? Str.SET_VOL_MASTER : i == 2 ? Str.SET_VOL_MUSIC : Str.SET_VOL_SFX;
             float v = i == 0 ? cfg.sens / 3f : i == 1 ? cfg.volMaster : i == 2 ? cfg.volMusic : cfg.volSfx;
-            String txt = i == 0 ? String.format("%.1f", cfg.sens) : (int) (v * 100) + "٪";
-            // track FIRST, labels ON TOP (fix: text was buried under the track)
+            String txt = i == 0 ? String.format("%.1f", cfg.sens) : (int) (v * 100) + "\u066A";
+            float th = Math.min(20 * dp, rowH * 0.40f);
+            float trackY = sy + rowH * 0.55f;
             p.setColor(0xFF202028);
-            c.drawRoundRect(tx0, sy, tx1, sy + 22 * dp, 11, 11, p);
+            c.drawRoundRect(x0, trackY, x1, trackY + th, th / 2, th / 2, p);
             p.setColor(0xFF7A2A2A);
-            c.drawRoundRect(tx0, sy, tx0 + (tx1 - tx0) * v, sy + 22 * dp, 11, 11, p);
+            c.drawRoundRect(x0, trackY, x0 + (x1 - x0) * Math.max(0.02f, v), trackY + th, th / 2, th / 2, p);
             p.setColor(0xFFE8E0C8);
-            c.drawCircle(tx0 + (tx1 - tx0) * v, sy + 11 * dp, 8 * dp, p);
-            // labels on top of the track, with a soft shadow for readability
+            c.drawCircle(x0 + (x1 - x0) * Math.max(0.02f, v), trackY + th / 2, th * 0.44f, p);
             p.setShadowLayer(5 * dp, 0, 0, 0xB4000000);
             p.setTextAlign(Paint.Align.RIGHT);
             p.setColor(0xFFEDE5CF);
-            p.setTextSize(14 * dp);
+            p.setTextSize(Math.min(14 * dp, rowH * 0.36f));
             p.setTypeface(Fonts.vazirBold(getContext()));
-            c.drawText(name, tx1 - 14 * dp, sy + 16 * dp, p);
+            c.drawText(name, x1, sy + rowH * 0.34f, p);
             p.setTextAlign(Paint.Align.LEFT);
             p.setTypeface(Fonts.vazir(getContext()));
             p.setColor(0xFFD8D0B8);
-            c.drawText(txt, tx0 + 14 * dp, sy + 16 * dp, p);
+            c.drawText(txt, x0, sy + rowH * 0.34f, p);
             p.setShadowLayer(0, 0, 0, 0);
             p.setTypeface(null);
         }
-        float qy = setY0 + 4 * setSH;
+        // ---- right column: quality label + 3 pills in one RTL row
+        float qLabelY = y0 + rowH * 0.34f;
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(0xFFCCCCCC);
-        p.setTextSize(14 * dp);
+        p.setTextSize(13 * dp);
         p.setTypeface(Fonts.vazirBold(getContext()));
-        c.drawText(Str.SET_QUALITY, w - 130 * dp, qy + 18 * dp, p);
+        c.drawText(Str.SET_QUALITY, qx1, qLabelY, p);
         p.setTypeface(null);
+        float qRowY = y0 + rowH * 0.48f;
         String[] qs = {Str.QUALITY_LOW, Str.QUALITY_MED, Str.QUALITY_HIGH};
         for (int i = 0; i < 3; i++) {
-            float bx = w * 0.5f + (i - 1) * 90 * dp;
+            float bx = qx1 - qw * (i + 0.5f) - i * 6 * dp; // RTL: option 0 rightmost
             p.setColor(cfg.quality == i ? 0xFF7A2A2A : 0xFF202028);
-            c.drawRoundRect(bx - 40 * dp, qy, bx + 40 * dp, qy + 26 * dp, 8, 8, p);
-            // fix: center-align the quality labels (were right-aligned → off-center)
+            c.drawRoundRect(bx - qw / 2, qRowY, bx + qw / 2, qRowY + Math.min(26 * dp, rowH * 0.44f), 8, 8, p);
             p.setTextAlign(Paint.Align.CENTER);
             p.setColor(cfg.quality == i ? 0xFFFFE0C0 : 0xFF999999);
-            p.setTextSize(12 * dp);
+            p.setTextSize(Math.min(11 * dp, rowH * 0.20f));
             p.setTypeface(Fonts.vazir(getContext()));
-            c.drawText(qs[i], bx, qy + 17 * dp, p);
+            c.drawText(qs[i], bx, qRowY + Math.min(26 * dp, rowH * 0.44f) * 0.66f, p);
             p.setTypeface(null);
         }
+        float qPillH = Math.min(26 * dp, rowH * 0.44f);
+        // ---- right column: 5 toggles (pill LEFT of the column, label right)
+        String[] tnames = {Str.SET_FOG, Str.SET_GRAIN, Str.SET_INVERT, Str.SET_VIBRATE, Str.SET_SHOWFPS};
+        boolean[] tvals = {cfg.fog, cfg.grain, cfg.invertLook, cfg.vibrate, cfg.showFps};
+        float togY0 = qRowY + qPillH + 10 * dp;
+        float pillX0 = qx1 - pillW * 2 - 8 * dp;
         for (int i = 0; i < 5; i++) {
-            float ty = qy + 40 * dp + i * 32 * dp;
-            String name = i == 0 ? Str.SET_FOG : i == 1 ? Str.SET_GRAIN : i == 2 ? Str.SET_INVERT
-                    : i == 3 ? Str.SET_VIBRATE : Str.SET_SHOWFPS;
-            boolean val = i == 0 ? cfg.fog : i == 1 ? cfg.grain : i == 2 ? cfg.invertLook
-                    : i == 3 ? cfg.vibrate : cfg.showFps;
-            // pill on the right edge; label sits to its LEFT (no overlap)
+            float ty = togY0 + i * togH;
+            if (ty + 24 * dp > h - 26 * dp) break; // absolute safety
+            float ph = Math.min(24 * dp, togH * 0.78f);
             p.setTextAlign(Paint.Align.RIGHT);
             p.setColor(0xFFCCCCCC);
-            p.setTextSize(13 * dp);
+            p.setTextSize(Math.min(13 * dp, togH * 0.44f));
             p.setTypeface(Fonts.vazir(getContext()));
-            c.drawText(name, w - 160 * dp, ty + 18 * dp, p);
+            c.drawText(tnames[i], qx1, ty + ph * 0.72f, p);
             p.setTypeface(null);
-            p.setColor(val ? 0xFF3F9B4F : 0xFF553333);
-            c.drawRoundRect(w - 150 * dp, ty, w - 40 * dp, ty + 26 * dp, 13 * dp, 13 * dp, p);
-            // fix: center ON/OFF inside the pill (was right-aligned → off-center)
+            p.setColor(tvals[i] ? 0xFF3F9B4F : 0xFF553333);
+            c.drawRoundRect(pillX0, ty, pillX0 + pillW * 2, ty + ph, ph / 2, ph / 2, p);
             p.setTextAlign(Paint.Align.CENTER);
             p.setColor(0xFFFFFFFF);
-            p.setTextSize(11 * dp);
+            p.setTextSize(Math.min(10 * dp, ph * 0.42f));
             p.setTypeface(Fonts.vazirBold(getContext()));
-            c.drawText(val ? Str.ON : Str.OFF, w - 95 * dp, ty + 17 * dp, p);
+            c.drawText(tvals[i] ? Str.ON : Str.OFF, pillX0 + pillW, ty + ph * 0.70f, p);
             p.setTypeface(null);
+        }
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setColor(0xFF888888);
+        p.setTextSize(11 * dp);
+        p.setTypeface(Fonts.vazir(getContext()));
+        c.drawText("\u2039 \u0628\u0627\u0632\u06AF\u0634\u062A \u2014 \u0644\u0645\u0633 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC", w / 2, h - 10 * dp, p);
+        p.setTypeface(null);
+    }
+
+    private void settingsTap(float x, float y) {
+        float[] M = setMetrics();
+        float x0 = M[0], x1 = M[1], y0 = M[2], rowH = M[3], qw = M[5], togH = M[7], pillW = M[9], qx1 = M[10];
+        // sliders
+        for (int i = 0; i < 4; i++) {
+            float sy = y0 + i * rowH;
+            if (y >= sy && y <= sy + rowH && x >= x0 - 8 * dp && x <= x1 + 8 * dp) {
+                float v = (x - x0) / (x1 - x0);
+                v = Math.max(0.02f, Math.min(1f, v));
+                switch (i) {
+                    case 0: cfg.sens = 0.2f + v * 2.8f; break;
+                    case 1: cfg.volMaster = v; break;
+                    case 2: cfg.volMusic = v; break;
+                    case 3: cfg.volSfx = v; break;
+                }
+                audio.play("ui_move", 0.4f);
+                SaveIO.saveConfig(act, cfg);
+                return;
+            }
+        }
+        // quality pills (RTL: option 0 rightmost)
+        float qRowY = y0 + rowH * 0.48f;
+        float qPillH = Math.min(26 * dp, rowH * 0.44f);
+        if (y >= qRowY && y <= qRowY + qPillH && x >= qx1 - qw * 3 - 12 * dp && x <= qx1) {
+            int i = (int) ((qx1 - x) / (qw + 6 * dp));
+            i = Math.max(0, Math.min(2, i));
+            if (i != cfg.quality) {
+                cfg.quality = i;
+                SaveIO.saveConfig(act, cfg);
+                audio.play("ui_select");
+            }
+            return;
+        }
+        // toggles
+        float togY0 = qRowY + qPillH + 10 * dp;
+        float pillX0 = qx1 - pillW * 2 - 8 * dp;
+        for (int i = 0; i < 5; i++) {
+            float ty = togY0 + i * togH;
+            float ph = Math.min(24 * dp, togH * 0.78f);
+            if (y >= ty && y <= ty + ph && x >= pillX0 - 8 * dp && x <= qx1) {
+                switch (i) {
+                    case 0: cfg.fog = !cfg.fog; break;
+                    case 1: cfg.grain = !cfg.grain; break;
+                    case 2: cfg.invertLook = !cfg.invertLook; break;
+                    case 3: cfg.vibrate = !cfg.vibrate; break;
+                    case 4: cfg.showFps = !cfg.showFps; break;
+                }
+                audio.play("ui_select", 0.7f);
+                SaveIO.saveConfig(act, cfg);
+                return;
+            }
         }
     }
 

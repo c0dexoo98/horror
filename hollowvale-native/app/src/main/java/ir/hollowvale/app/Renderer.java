@@ -145,8 +145,8 @@ public class Renderer implements GLSurfaceView.Renderer {
                 }
                 b.put((byte) tile);
                 b.put((byte) (int) (open * 255f));
-                b.put((byte) 0);
-                b.put((byte) 255);
+                b.put((byte) ceilTileFor(c));
+                b.put((byte) floorTileFor(c));
             }
         }
         b.position(0);
@@ -188,6 +188,27 @@ public class Renderer implements GLSurfaceView.Renderer {
             case 'd':
             case 'h': return 4;      // wooden door
             default: return 0;
+        }
+    }
+
+    /** floor tile per area: interiors wood, church path stone, outdoors dirt. */
+    private static int floorTileFor(char c) {
+        switch (c) {
+            case ':': return 19;     // paved stone road to the gates
+            case '.': return 16;     // interior wood planks
+            case 'h': case 'd': case 'D': case 'Z': return 16;
+            case 'g': case 'G': return 16;
+            default: return 18;      // outdoor dirt/grass
+        }
+    }
+
+    /** ceiling tile per area: 0 = open sky. */
+    private static int ceilTileFor(char c) {
+        switch (c) {
+            case '.': return 25;     // wood beams
+            case 'h': case 'd': case 'D': case 'Z': return 24; // plaster
+            case 'g': case 'G': return 24;
+            default: return 0;       // outdoors → sky
         }
     }
 
@@ -298,10 +319,11 @@ public class Renderer implements GLSurfaceView.Renderer {
         uLightPosR.clear();
         uLightColI.clear();
         for (int i = 0; i < 12; i++) {
-            for (int k = 0; k < 3; k++) {
-                uLightPosR.put(lightBuf[i * 8 + k]);
-                uLightColI.put(lightBuf[i * 8 + 3 + k]);
-            }
+            // lightBuf layout: [0]=x [1]=y [2..4]=rgb [5]=intensity [6]=radius [7]=seed
+            uLightPosR.put(lightBuf[i * 8]).put(lightBuf[i * 8 + 1]).put(lightBuf[i * 8 + 6]); // x, y, RADIUS
+            uLightColI.put(lightBuf[i * 8 + 2] * lightBuf[i * 8 + 5])
+                    .put(lightBuf[i * 8 + 3] * lightBuf[i * 8 + 5])
+                    .put(lightBuf[i * 8 + 4] * lightBuf[i * 8 + 5]);                           // rgb × intensity
         }
         uLightPosR.position(0);
         uLightColI.position(0);

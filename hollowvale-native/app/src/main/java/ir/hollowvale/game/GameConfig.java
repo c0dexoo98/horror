@@ -76,12 +76,12 @@ public final class GameConfig {
 
     public void deserialize(String s) { fromMap(Json.readObj(s)); }
 
-    /** internal render height by quality. */
+    /** internal render height by quality (upscaled with nearest + PS1 post pass). */
     public int renderHeight() {
         switch (quality) {
-            case 0: return 200;
-            case 2: return 360;
-            default: return 272;
+            case 0: return 288;
+            case 2: return 512;
+            default: return 384;
         }
     }
 }

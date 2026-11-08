@@ -1437,6 +1437,15 @@ public class World {
             if (e.brightness <= 0.05f) fx.remove(i);
             else out.add(e);
         }
+        // far → near so alpha blending never lets a near sprite be overwritten by a far one
+        final float px = player.x, py = player.y;
+        java.util.Collections.sort(out, new java.util.Comparator<Ent>() {
+            public int compare(Ent a, Ent b) {
+                float da = (a.x - px) * (a.x - px) + (a.y - py) * (a.y - py);
+                float db = (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py);
+                return Float.compare(db, da);
+            }
+        });
     }
 
     /** light list for shader: [x,y,r,g,b,intensity,radius,flickerSeed] per light. */
