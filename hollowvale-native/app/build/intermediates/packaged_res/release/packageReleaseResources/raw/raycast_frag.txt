@@ -1,0 +1,197 @@
+precision highp float;
+varying vec2 vUV;
+uniform sampler2D uMap;
+uniform sampler2D uAtlas;
+uniform sampler2D uSprites;
+uniform vec2 uMapSize;
+uniform vec2 uPos;
+uniform vec2 uDir;
+uniform float uPitch;
+uniform float uFov;
+uniform float uTime;
+uniform float uAspect;
+uniform float uFog;
+uniform float uLightning;
+uniform float uFlashOn;
+uniform float uFlashBat;
+uniform int uLightCount;
+uniform vec3 uLightPosR[12];
+uniform vec3 uLightColI[12];
+uniform int uSpriteCount;
+uniform vec3 uSprPTile[24];
+uniform vec3 uSprSShift[24];
+
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+vec3 lighting(vec2 wp) {
+    vec3 l = vec3(0.135, 0.145, 0.175);
+    l += vec3(0.30, 0.34, 0.50) * uLightning * 0.85;
+    for (int i = 0; i < 12; i++) {
+        if (i >= uLightCount) break;
+        vec3 lp = uLightPosR[i];
+        vec2 dv = wp - lp.xy;
+        float d = length(dv);
+        float att = clamp(1.0 - d / lp.z, 0.0, 1.0);
+        att *= att;
+        float flick = 0.86 + 0.14 * sin(uTime * (6.0 + fract(lp.x) * 5.0) + lp.y * 7.0);
+        l += uLightColI[i] * att * flick;
+    }
+    if (uFlashOn > 0.5) {
+        vec2 to = wp - uPos;
+        float td = length(to);
+        float ca = dot(to / max(td, 0.001), uDir);
+        float cone = smoothstep(0.78, 0.95, ca);
+        float fall = clamp(1.0 - td / 8.5, 0.0, 1.0);
+        float batt = 0.35 + 0.65 * uFlashBat;
+        float flick = 0.9 + 0.1 * sin(uTime * 37.0) * uFlashBat;
+        l += vec3(1.0, 0.94, 0.80) * (cone * fall * fall * 1.5 * batt * flick);
+    }
+    return l;
+}
+
+void main() {
+    float ndcX = vUV.x * 2.0 - 1.0;
+    float horizon = 0.5 - uPitch * 0.5;
+    vec2 plane = vec2(-uDir.y, uDir.x) * (uFov * uAspect);
+    vec2 rd = uDir + plane * ndcX;
+
+    // ---------------- DDA ----------------
+    int mx = int(floor(uPos.x));
+    int my = int(floor(uPos.y));
+    vec2 ddist = abs(vec2(1.0) / rd);
+    vec2 stpf = vec2(rd.x < 0.0 ? -1.0 : 1.0, rd.y < 0.0 ? -1.0 : 1.0);
+    vec2 sdist = vec2(
+        (rd.x < 0.0 ? (uPos.x - float(mx)) : (float(mx) + 1.0 - uPos.x)),
+        (rd.y < 0.0 ? (uPos.y - float(my)) : (float(my) + 1.0 - uPos.y))
+    ) * ddist;
+
+    float perp = 60.0;
+    float wallX = 0.0;
+    float side = 0.0;
+    float tile = 0.0;
+    bool hit = false;
+
+    for (int i = 0; i < 72; i++) {
+        if (hit) break;
+        if (sdist.x < sdist.y) {
+            perp = sdist.x;
+            sdist.x += ddist.x;
+            mx += int(stpf.x);
+            side = 0.0;
+        } else {
+            perp = sdist.y;
+            sdist.y += ddist.y;
+            my += int(stpf.y);
+            side = 1.0;
+        }
+        if (mx < 0 || my < 0 || mx >= int(uMapSize.x) || my >= int(uMapSize.y)) break;
+        vec4 cellData = texture2D(uMap, (vec2(float(mx), float(my)) + 0.5) / uMapSize);
+        tile = floor(cellData.r * 255.0 + 0.5);
+        float open = cellData.g;
+        if (tile > 0.5) {
+            vec2 hpos = uPos + rd * perp;
+            if (side < 0.5) wallX = fract(hpos.y);
+            else wallX = fract(hpos.x);
+            if (open > 0.004) {
+                float dx2 = wallX + open;
+                if (dx2 < 0.999) {
+                    wallX = dx2;
+                    hit = true;
+                }
+            } else {
+                hit = true;
+            }
+        }
+    }
+
+    vec3 col = vec3(0.010, 0.010, 0.016);
+    float fogC = 0.0;
+
+    if (hit) {
+        float lineH = 1.0 / max(perp, 0.01);
+        float v0 = horizon - lineH * 0.5;
+        float v1 = horizon + lineH * 0.5;
+        float ti = tile;
+        float tu = mod(ti, 4.0);
+        float tv = floor(ti / 4.0);
+        if (vUV.y > v0 && vUV.y < v1) {
+            float ty = clamp((vUV.y - v0) / lineH, 0.0, 1.0);
+            float tx = wallX;
+            if (side > 0.5 && rd.x > 0.0) tx = 1.0 - tx;
+            if (side < 0.5 && rd.y < 0.0) tx = 1.0 - tx;
+            vec2 uv = vec2((tu + tx) * 0.25, 1.0 - (tv + ty) * 0.25);
+            vec3 tex = texture2D(uAtlas, uv).rgb;
+            vec2 wp = uPos + rd * perp;
+            vec3 li = lighting(wp);
+            float sideShade = side > 0.5 ? 0.70 : 1.0;
+            fogC = exp(-perp * perp * uFog * 0.016);
+            col = tex * li * sideShade * fogC;
+        } else if (vUV.y >= v1) {
+            float rowDist = 0.5 / max(vUV.y - horizon, 0.002);
+            if (rowDist < perp) {
+                vec2 fp = uPos + rd * rowDist;
+                vec2 uv = vec2((2.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
+                vec3 tex = texture2D(uAtlas, uv).rgb * 0.60;
+                vec3 li = lighting(fp);
+                fogC = exp(-rowDist * rowDist * uFog * 0.016);
+                col = tex * li * fogC;
+            }
+        } else {
+            float rowDist = 0.5 / max(horizon - vUV.y, 0.002);
+            if (rowDist < perp) {
+                vec2 fp = uPos + rd * rowDist;
+                vec2 uv = vec2((1.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
+                vec3 tex = texture2D(uAtlas, uv).rgb * 0.16;
+                vec3 li = lighting(fp) * 0.45;
+                fogC = exp(-rowDist * rowDist * uFog * 0.016);
+                col = tex * li * fogC;
+            }
+        }
+    } else {
+        if (vUV.y >= horizon) {
+            float rowDist = 0.5 / max(vUV.y - horizon, 0.002);
+            vec2 fp = uPos + rd * rowDist;
+            vec2 uv = vec2((2.0 + fract(fp.x)) * 0.25, 1.0 - (2.0 + fract(fp.y)) * 0.25);
+            vec3 tex = texture2D(uAtlas, uv).rgb * 0.60;
+            vec3 li = lighting(fp);
+            fogC = exp(-rowDist * rowDist * uFog * 0.016);
+            col = tex * li * fogC;
+        }
+    }
+
+    // ---------------- sprites ----------------
+    float invDet = 1.0 / (plane.x * uDir.y - uDir.x * plane.y);
+    for (int i = 0; i < 24; i++) {
+        if (i >= uSpriteCount) break;
+        vec3 spt = uSprPTile[i];
+        vec3 sss = uSprSShift[i]; // scale, vOffset(up+), brightness
+        vec2 rel = spt.xy - uPos;
+        float transX = invDet * (uDir.y * rel.x - uDir.x * rel.y);
+        float transY = invDet * (-plane.y * rel.x + plane.x * rel.y);
+        if (transY <= 0.22 || transY >= perp) continue;
+        float sxc = transX / transY;
+        float halfW = sss.x * 0.5 / transY;
+        float x0 = sxc - halfW;
+        float x1 = sxc + halfW;
+        if (ndcX < x0 || ndcX > x1) continue;
+        float u = (ndcX - x0) / max(x1 - x0, 0.0001);
+        float hgt = sss.x / transY;
+        float bottom = horizon + (0.5 - sss.y) / transY;
+        float top = bottom - hgt;
+        if (vUV.y < top || vUV.y > bottom) continue;
+        float v = clamp((bottom - vUV.y) / max(hgt, 0.0001), 0.0, 1.0);
+        float tu = mod(spt.z, 8.0);
+        float tv = floor(spt.z / 8.0);
+        vec2 uv = vec2((tu + u) / 8.0, 1.0 - (tv + (1.0 - v)) / 8.0);
+        vec4 tex = texture2D(uSprites, uv);
+        if (tex.a < 0.4) continue;
+        vec3 li = lighting(spt.xy);
+        float fogS = exp(-transY * transY * uFog * 0.013);
+        col = mix(col, tex.rgb * li * sss.z * fogS, 0.94);
+    }
+
+    col = max(col, vec3(0.0));
+    gl_FragColor = vec4(col, 1.0);
+}

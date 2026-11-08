@@ -1,0 +1,7 @@
+ir.hollowvale.app-pngs-0 /home/z/my-project/hollowvale-native/app/build/generated/res/pngs/release
+ir.hollowvale.app-resValues-1 /home/z/my-project/hollowvale-native/app/build/generated/res/resValues/release
+ir.hollowvale.app-packageReleaseResources-2 /home/z/my-project/hollowvale-native/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+ir.hollowvale.app-packageReleaseResources-3 /home/z/my-project/hollowvale-native/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+ir.hollowvale.app-release-4 /home/z/my-project/hollowvale-native/app/build/intermediates/merged_res/release/mergeReleaseResources
+ir.hollowvale.app-main-5 /home/z/my-project/hollowvale-native/app/src/main/res
+ir.hollowvale.app-release-6 /home/z/my-project/hollowvale-native/app/src/release/res

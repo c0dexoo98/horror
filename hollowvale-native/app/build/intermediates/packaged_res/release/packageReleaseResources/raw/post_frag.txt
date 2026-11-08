@@ -1,0 +1,79 @@
+precision mediump float;
+varying vec2 vUV;
+uniform sampler2D uTex;
+uniform float uTime;
+uniform float uGrain;
+uniform float uDamage;
+uniform float uSanity;      // 0..1 (1 = very low sanity)
+uniform float uFlash;       // camera flash
+uniform float uVignette;
+uniform float uLightning;
+
+float bayer4(vec2 p) {
+    vec2 P = floor(mod(p, 4.0));
+    float i = P.x + P.y * 4.0;
+    float t = 0.0;
+    if (i < 0.5) t = 0.0;
+    else if (i < 1.5) t = 8.0;
+    else if (i < 2.5) t = 2.0;
+    else if (i < 3.5) t = 10.0;
+    else if (i < 4.5) t = 12.0;
+    else if (i < 5.5) t = 4.0;
+    else if (i < 6.5) t = 14.0;
+    else if (i < 7.5) t = 6.0;
+    else if (i < 8.5) t = 3.0;
+    else if (i < 9.5) t = 11.0;
+    else if (i < 10.5) t = 1.0;
+    else if (i < 11.5) t = 9.0;
+    else if (i < 12.5) t = 15.0;
+    else if (i < 13.5) t = 7.0;
+    else if (i < 14.5) t = 13.0;
+    else t = 5.0;
+    return (t + 0.5) / 16.0;
+}
+
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7)) + uTime * 17.0) * 43758.5453);
+}
+
+void main() {
+    vec2 uv = vUV;
+    // low-sanity wobble
+    uv.x += sin(uv.y * 34.0 + uTime * 2.6) * 0.006 * uSanity;
+    uv.y += sin(uv.x * 23.0 - uTime * 2.1) * 0.004 * uSanity;
+    uv = clamp(uv, 0.001, 0.999);
+
+    vec3 c = texture2D(uTex, uv).rgb;
+
+    // slight chromatic aberration at low sanity / damage
+    float ca = 0.0015 + 0.003 * uSanity + 0.002 * uDamage;
+    c.r = texture2D(uTex, clamp(uv + vec2(ca, 0.0), 0.001, 0.999)).r * 0.5 + c.r * 0.5;
+    c.b = texture2D(uTex, clamp(uv - vec2(ca, 0.0), 0.001, 0.999)).b * 0.5 + c.b * 0.5;
+
+    // lightning lift
+    c += vec3(0.35, 0.38, 0.5) * uLightning * 0.35;
+
+    // bayer dither + 5-bit quantize (PS1)
+    float d = bayer4(gl_FragCoord.xy) - 0.5;
+    c += d / 26.0;
+    c = floor(c * 31.0 + 0.5) / 31.0;
+
+    // film grain
+    c += (hash(gl_FragCoord.xy) - 0.5) * uGrain;
+
+    // damage: red pulse vignette
+    float vig = 1.0 - uVignette * pow(length(vUV - 0.5) * 1.35, 2.6);
+    c *= clamp(vig, 0.0, 1.0);
+    if (uDamage > 0.01) {
+        float dvig = pow(length(vUV - vec2(0.5, 0.55)) * 1.4, 3.0);
+        c = mix(c, vec3(0.45, 0.02, 0.02), clamp(dvig, 0.0, 1.0) * uDamage * 0.85);
+    }
+    // low sanity: cold desaturation + pulsing darkness
+    if (uSanity > 0.01) {
+        float g = dot(c, vec3(0.299, 0.587, 0.114));
+        c = mix(c, vec3(g) * vec3(0.9, 0.95, 1.08), uSanity * 0.35);
+        c *= 1.0 - uSanity * 0.22 * (0.5 + 0.5 * sin(uTime * 4.2));
+    }
+    c += uFlash;
+    gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
