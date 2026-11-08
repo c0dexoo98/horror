@@ -40,9 +40,12 @@ cp build/dexout/classes.dex build/
 cd build && "$BT/aapt" add base.apk classes.dex > /dev/null && cd ..
 
 echo "==> [7/7] Aligning & signing"
-rm -f build/hv.keystore
-keytool -genkeypair -keystore build/hv.keystore -alias hv -keyalg RSA -keysize 2048 -validity 10000 \
-  -storepass hollowvale -keypass hollowvale -dname "CN=Hollow Vale Native, OU=Game, O=HV, L=Tehran, C=IR" 2>/dev/null
+# Reuse the existing keystore so updates install over previous builds.
+# (Regenerating it changes the signature and Android refuses the update.)
+if [ ! -f build/hv.keystore ]; then
+  keytool -genkeypair -keystore build/hv.keystore -alias hv -keyalg RSA -keysize 2048 -validity 10000 \
+    -storepass hollowvale -keypass hollowvale -dname "CN=Hollow Vale Native, OU=Game, O=HV, L=Tehran, C=IR" 2>/dev/null
+fi
 "$BT/zipalign" -f 4 build/base.apk build/aligned.apk
 "$BT/apksigner" sign --ks build/hv.keystore --ks-pass pass:hollowvale --key-pass pass:hollowvale \
   --out "$OUT/HollowVale-Native.apk" build/aligned.apk

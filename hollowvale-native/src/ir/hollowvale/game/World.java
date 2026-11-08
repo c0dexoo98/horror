@@ -194,8 +194,7 @@ public final class World {
             }
         } else if (r.tile == Map.GATE) {
             if (banished && !win) {
-                map.setOpen(21, 33);
-                map.setOpen(22, 33);
+                for (int[] gt : MapData.GATE) map.setOpen(gt[0], gt[1]); // was hardcoded 21/22
                 win = true;
                 quests.complete(6);
                 sound("gate");

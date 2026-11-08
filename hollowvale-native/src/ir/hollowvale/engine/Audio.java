@@ -32,11 +32,7 @@ public final class Audio {
                 .build();
         sp.setOnLoadCompleteListener((spl, sampleId, status) -> {
             loaded++;
-            if (loaded >= total) {
-                ambStream = sp.play(ids.get("ambient"), 0f, 0f, 0, -1, 1f);
-                chaseStream = sp.play(ids.get("chase"), 0f, 0f, 0, -1, 1f);
-                ready = true;
-            }
+            if (loaded >= total && total > 0) startLoops();
         });
         final Context c = ctx.getApplicationContext();
         new Thread(() -> {
@@ -76,6 +72,23 @@ public final class Audio {
             }
         }
         total = ids.size();
+        // Watchdog: if some load callback never arrives (corrupt file etc.), don't
+        // lose ALL audio — start the loops as soon as the two loop sounds are there.
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (loaded >= 2) startLoops();
+        }, 3000);
+    }
+
+    private synchronized void startLoops() {
+        if (ready) return;
+        Integer amb = ids.get("ambient"), ch = ids.get("chase");
+        if (amb == null || ch == null) return;
+        ready = true;
+        try {
+            ambStream = sp.play(amb, 0f, 0f, 0, -1, 1f);
+            chaseStream = sp.play(ch, 0f, 0f, 0, -1, 1f);
+        } catch (Exception ignored) {
+        }
     }
 
     private interface Fn { double at(double t, double dur); }
@@ -263,7 +276,7 @@ public final class Audio {
 
     public void tick(boolean chasing, float dt) {
         if (!ready) return;
-        float ta = (chasing || muted || paused) ? (chasing ? 0.06f : 0f) : 0.42f;
+        float ta = (muted || paused) ? 0f : (chasing ? 0.06f : 0.42f);
         float tc = (chasing && !muted && !paused) ? 0.42f : 0f;
         float k = Math.min(1, dt * 3f);
         ambV += (ta - ambV) * k;
@@ -277,5 +290,9 @@ public final class Audio {
 
     public void setPaused(boolean p) {
         paused = p;
+    }
+
+    public void setMuted(boolean m) {
+        muted = m;
     }
 }

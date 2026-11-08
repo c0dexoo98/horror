@@ -39,6 +39,8 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
     @Override public void surfaceCreated(SurfaceHolder holder) { }
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         w = width; h = height;
+        // Deferred: only store the request here. init() must never run on the UI
+        // thread while the game thread is mid-render (was a crash/black-frame race).
         renderer.setScale(curScale, width, height);
         input.layout(width, height);
         hud.layout(width, height);
@@ -76,16 +78,17 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                 last = System.nanoTime();
                 continue;
             }
+            // Any uncaught exception here used to kill the thread and freeze the
+            // game forever. Catch everything, log it, keep the loop alive.
             long now = System.nanoTime();
             float dtms = (now - last) / 1e6f;
             last = now;
             double dt = Math.min(0.05, dtms / 1000.0);
-
-            game.update(dt, input.getCtrl());
-            input.afterFrame();
-
             Canvas cv = null;
             try {
+                game.update(dt, input.getCtrl());
+                input.afterFrame();
+
                 cv = getHolder().lockCanvas();
                 if (cv != null) {
                     if (game.state == Game.State.MENU || game.state == Game.State.HOWTO) {
@@ -99,22 +102,32 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                     input.draw(cv, game);
                     hud.draw(cv, game);
                 }
-            } catch (Exception ignored) {
+            } catch (Throwable t) {
+                t.printStackTrace();
+                errorStreak++;
+                if (errorStreak > 90) { // totally broken -> back to menu instead of frozen screen
+                    errorStreak = 0;
+                    game.state = Game.State.MENU;
+                    game.world = null;
+                }
             } finally {
                 if (cv != null) {
                     try { getHolder().unlockCanvasAndPost(cv); } catch (Exception ignored) { }
                 }
             }
+            errorStreak = Math.max(0, errorStreak - 1);
             autoPerf(dtms);
         }
     }
+
+    private int errorStreak;
 
     private void autoPerf(float dtms) {
         frameAvg = frameAvg * 0.94f + dtms * 0.06f;
         if (frameAvg > 38 && curScale > 0.34f) {
             curScale -= 0.07f;
             frameAvg = 24;
-            renderer.setScale(curScale, w, h);
+            renderer.setScale(curScale, w, h); // applied lazily inside render()
         } else if (frameAvg < 20 && curScale < 0.58f) {
             curScale += 0.04f;
             frameAvg = 30;

@@ -27,8 +27,13 @@ public final class Game {
     }
 
     public void update(double dt, Ctrl c) {
+        if (audio != null) audio.setMuted(!soundOn); // SOUND:OFF must silence everything
         if (state == State.DEAD && jumpT > 0) jumpT = Math.max(0, jumpT - dt);
-        if (state != State.PLAYING || world == null) return;
+        if (state != State.PLAYING || world == null) {
+            // fade chase/heartbeat loops out when paused, dead, win or in menu
+            if (audio != null && world != null) audio.tick(false, (float) dt);
+            return;
+        }
 
         if (c.mapEdge) { c.mapEdge = false; mapOn = !mapOn; }
         if (c.tasksEdge) { c.tasksEdge = false; tasksOpen = !tasksOpen; }
@@ -51,7 +56,7 @@ public final class Game {
         }
 
         double fear = world.player.fear;
-        if (fear > 45) {
+        if (soundOn && fear > 45) {
             hbT -= dt;
             if (hbT <= 0) {
                 hbT = 1.15 - 0.62 * (fear - 45) / 55;

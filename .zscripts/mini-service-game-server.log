@@ -1,0 +1,9 @@
+[game-server] Installing dependencies...
+bun install v1.3.14 (0d9b296a)
+
++ socket.io@4.8.4
+
+21 packages installed [107.00ms]
+[game-server] Running bun run dev...
+$ bun --hot index.ts
+HOLLOW VALE multiplayer server on :3003

@@ -38,6 +38,7 @@ public final class Monster {
         Player p = w.player;
         Map m = w.map;
         catchCd = Math.max(0, catchCd - dt);
+        repathT = Math.max(0, repathT - dt); // global BFS throttle (was repathing every frame in PATROL/SEARCH)
         stateT += dt;
 
         double dx = p.x - x, dy = p.y - y;
@@ -59,7 +60,6 @@ public final class Monster {
             lostT += dt;
             if (lostT > 3.5) { state = State.SEARCH; stateT = 0; wanderT = 0; }
         }
-
         if (state != State.CHASE && state != State.STUN) {
             World.Noise bestN = null; double bd = 1e18;
             for (World.Noise n : w.noises) {
@@ -83,7 +83,6 @@ public final class Monster {
                 if (stunT <= 0) { state = sees ? State.CHASE : State.PATROL; stateT = 0; }
                 return;
             case CHASE:
-                repathT -= dt;
                 if (repathT <= 0) { repathT = 0.35; setPath(m, (int) p.x, (int) p.y); }
                 break;
             case INVESTIGATE:
@@ -96,7 +95,8 @@ public final class Monster {
                 break;
             case SEARCH:
                 wanderT -= dt;
-                if (pathI >= path.size() || wanderT <= 0) {
+                if (repathT <= 0 && (pathI >= path.size() || wanderT <= 0)) {
+                    repathT = 0.9;
                     wanderT = 2.2;
                     int rx = (int) lsx + rng.nextInt(7) - 3;
                     int ry = (int) lsy + rng.nextInt(7) - 3;
@@ -104,9 +104,12 @@ public final class Monster {
                 }
                 if (stateT > 9) { state = State.PATROL; stateT = 0; }
                 break;
-            default:
-                int[] wp = w.patrolPoint(patrolI++);
-                if (pathI >= path.size() || path.isEmpty()) setPath(m, wp[0], wp[1]);
+            default: // PATROL — advance one waypoint at a time, throttled
+                if (repathT <= 0 && (pathI >= path.size() || path.isEmpty())) {
+                    repathT = 0.6;
+                    int[] wp = w.patrolPoint(patrolI++);
+                    setPath(m, wp[0], wp[1]);
+                }
                 break;
         }
         moveAlong(dt, w, speedNow());
@@ -123,6 +126,10 @@ public final class Monster {
     }
 
     private void moveAlong(double dt, World w, double speed) {
+        // self-rescue: if somehow standing inside a closed door tile (repath edge
+        // case), open it — otherwise the circle collision test freezes us forever
+        int mtx = (int) x, mty = (int) y;
+        if (w.map.tile(mtx, mty) == Map.DOOR) w.openDoorAuto(mtx, mty);
         if (pathI >= path.size()) {
             if (state == State.CHASE) {
                 double ta = Math.atan2(w.player.y - y, w.player.x - x);

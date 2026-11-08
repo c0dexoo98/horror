@@ -32,12 +32,19 @@ public final class Renderer {
 
     private final Paint pWall = new Paint(), pShade = new Paint(), pSprite = new Paint(),
             pFx = new Paint(), pScale = new Paint(), pGrain = new Paint();
-    private Paint pPool1, pPool2;
+    private Paint pPool1, pPool2, pPunch;
     private Paint pVig, pFear;
     private final Rect srcR = new Rect();
     private final RectF dstF = new RectF();
     private final Map.Ray ray = new Map.Ray();
     private final Random rng = new Random();
+
+    // deferred (re)initialization: setScale() only records a request; the actual
+    // bitmap (re)allocation happens at the start of render(), on the game thread.
+    // This removes the UI-thread/game-thread race that caused black frames.
+    private volatile boolean needsInit = true;
+    private float pendScale = 0.5f;
+    private int pendW = 960, pendH = 540;
 
     // sprite scratch
     private static final int MAXS = 96;
@@ -51,8 +58,17 @@ public final class Renderer {
     public Bitmap face() { return TextureGen.face; }
 
     public void setScale(float s, int sw, int sh) {
-        scale = s;
-        init(sw, sh);
+        pendScale = s;
+        pendW = sw;
+        pendH = sh;
+        needsInit = true;
+    }
+
+    private void applyPending() {
+        if (!needsInit) return;
+        needsInit = false;
+        scale = pendScale;
+        init(pendW, pendH);
     }
 
     public void init(int sw, int sh) {
@@ -90,6 +106,11 @@ public final class Renderer {
                 new int[]{0xCCFFFFFF, 0x00FFFFFF}, new float[]{0f, 1f}, Shader.TileMode.CLAMP));
         pPool2.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT));
 
+        // one reusable punch paint (was allocated + shader created EVERY frame)
+        pPunch = new Paint(Paint.ANTI_ALIAS_FLAG);
+        pPunch.setShader(new RadialGradient(0, 0, 1, new int[]{0xFFFFFFFF, 0x00FFFFFF}, new float[]{0f, 1f}, Shader.TileMode.CLAMP));
+        pPunch.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT));
+
         pVig = new Paint();
         pVig.setShader(new RadialGradient(BW / 2f, BH / 2f, BW * 0.72f,
                 new int[]{0x00000000, 0x66000000, 0xB4000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP));
@@ -109,6 +130,7 @@ public final class Renderer {
     }
 
     public void render(World w) {
+        applyPending(); // safe: runs on the game thread only
         float px = (float) w.player.x, py = (float) w.player.y;
         double t = w.time;
         double dirX = Math.cos(w.player.ang), dirY = Math.sin(w.player.ang);
@@ -256,15 +278,12 @@ public final class Renderer {
             lc.drawCircle(BW / 2f, BH * 0.70f, BW * 0.62f, pPool1);
             lc.drawCircle(BW / 2f, BH * 0.46f, BW * 0.92f, pPool2);
         }
-        Paint punch = new Paint(Paint.ANTI_ALIAS_FLAG);
-        punch.setShader(new RadialGradient(0, 0, 1, new int[]{0xFFFFFFFF, 0x00FFFFFF}, new float[]{0f, 1f}, Shader.TileMode.CLAMP));
-        punch.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT));
         for (float[] p : punches) {
-            punch.setAlpha((int) Math.min(255, p[3]));
+            pPunch.setAlpha((int) Math.min(255, p[3]));
             lc.save();
             lc.translate(p[0], p[1]);
             lc.scale(p[2], p[2]);
-            lc.drawCircle(0, 0, 1, punch);
+            lc.drawCircle(0, 0, 1, pPunch);
             lc.restore();
         }
         bc.drawBitmap(lightBmp, 0, 0, null);

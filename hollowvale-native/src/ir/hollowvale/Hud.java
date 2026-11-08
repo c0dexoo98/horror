@@ -214,9 +214,40 @@ public final class Hud {
         p.setStyle(Paint.Style.FILL);
         p.setColor(Color.argb(140, 6, 6, 10));
         c.drawRoundRect(new RectF(x0 - 4, y0 - 4, x0 + size + 4, y0 + size * 0.8f + 4), 4, 4, p);
-        for (int ty = 0; ty < ir.hollowvale.game.MapData.H; ty++) {
-            for (int tx = 0; tx < ir.hollowvale.game.MapData.W; tx++) {
-                int idx = ty * ir.hollowvale.game.MapData.W + tx;
+        // cached tiles bitmap — rebuilt at most ~3x/s (was ~1500 drawRects per frame)
+        buildMinimapCache(w, size, cs);
+        if (mmCache != null) c.drawBitmap(mmCache, x0, y0, pScale);
+        if (tgt != null) {
+            p.setColor(Color.rgb(255, 200, 80));
+            c.drawCircle(x0 + (float) tgt[0] * cs, y0 + (float) tgt[1] * cs, 3 * dp, p);
+        }
+        p.setColor(Color.rgb(240, 240, 250));
+        c.drawCircle(x0 + (float) w.player.x * cs, y0 + (float) w.player.y * cs, 2.6f * dp, p);
+        p.setColor(Color.rgb(240, 240, 250));
+        p.setStrokeWidth(1.6f);
+        c.drawLine(x0 + (float) w.player.x * cs, y0 + (float) w.player.y * cs,
+                x0 + (float) (w.player.x + Math.cos(w.player.ang) * 2.2) * cs,
+                y0 + (float) (w.player.y + Math.sin(w.player.ang) * 2.2) * cs, p);
+    }
+
+    private android.graphics.Bitmap mmCache;
+    private long mmLastBuild;
+    private final Paint pScale = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+
+    private void buildMinimapCache(World w, float size, float cs) {
+        long now = System.nanoTime();
+        if (mmCache != null && now - mmLastBuild < 320_000_000L) return;
+        mmLastBuild = now;
+        int mw = (int) (size + 2), mh = (int) (size * 0.8f + 2);
+        if (mmCache == null || mmCache.getWidth() != mw || mmCache.getHeight() != mh) {
+            mmCache = android.graphics.Bitmap.createBitmap(mw, mh, android.graphics.Bitmap.Config.ARGB_8888);
+        }
+        Canvas mc = new Canvas(mmCache);
+        mc.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
+        int mw2 = ir.hollowvale.game.MapData.W, mh2 = ir.hollowvale.game.MapData.H;
+        for (int ty = 0; ty < mh2; ty++) {
+            for (int tx = 0; tx < mw2; tx++) {
+                int idx = ty * mw2 + tx;
                 if (!w.map.explored[idx]) continue;
                 int t = w.map.tile(tx, ty);
                 if (t == 0) {
@@ -230,20 +261,9 @@ public final class Hud {
                 } else {
                     p.setColor(Color.argb(190, 130, 130, 140));
                 }
-                c.drawRect(x0 + tx * cs, y0 + ty * cs, x0 + (tx + 1) * cs, y0 + (ty + 1) * cs, p);
+                mc.drawRect(tx * cs, ty * cs, (tx + 1) * cs, (ty + 1) * cs, p);
             }
         }
-        if (tgt != null) {
-            p.setColor(Color.rgb(255, 200, 80));
-            c.drawCircle(x0 + (float) tgt[0] * cs, y0 + (float) tgt[1] * cs, 3 * dp, p);
-        }
-        p.setColor(Color.rgb(240, 240, 250));
-        c.drawCircle(x0 + (float) w.player.x * cs, y0 + (float) w.player.y * cs, 2.6f * dp, p);
-        p.setColor(Color.rgb(240, 240, 250));
-        p.setStrokeWidth(1.6f);
-        c.drawLine(x0 + (float) w.player.x * cs, y0 + (float) w.player.y * cs,
-                x0 + (float) (w.player.x + Math.cos(w.player.ang) * 2.2) * cs,
-                y0 + (float) (w.player.y + Math.sin(w.player.ang) * 2.2) * cs, p);
     }
 
     private void drawTasks(Canvas c, Game g) {
@@ -339,7 +359,7 @@ public final class Hud {
         txt.setTextAlign(Paint.Align.CENTER);
         txt.setTextSize(9.5f * dp);
         txt.setColor(Color.argb(110, 150, 150, 145));
-        c.drawText("v2.0 native · custom Java raycast engine · no web view", sw / 2f, sh - 10 * dp, txt);
+        c.drawText("v2.1 native · custom Java raycast engine · bug-fix build", sw / 2f, sh - 10 * dp, txt);
     }
 
     private void drawHowto(Canvas c, Game g) {

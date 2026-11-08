@@ -20,7 +20,7 @@ public final class Input {
     private float jR = 90;
 
     private final RectF bLight = new RectF(), bUse = new RectF(), bSneak = new RectF(),
-            bMap = new RectF(), bTasks = new RectF();
+            bMap = new RectF(), bTasks = new RectF(), bPause = new RectF();
     private float rBig, rSmall;
     private int sw, sh;
 
@@ -39,6 +39,10 @@ public final class Input {
         setCircle(bSneak, w - 3.7f * rBig, h - 3.6f * rBig, rSmall);
         setCircle(bMap, w - 1.4f * rBig, h - 3.9f * rBig, rSmall);
         setCircle(bTasks, w - 1.4f * rBig, h - 5.9f * rBig, rSmall);
+        // PAUSE: small button in the top-left, right of the battery/health bars
+        float d = Math.min(w, h) / 400f;
+        float pr = Math.max(17, 16 * d);
+        setCircle(bPause, 14 * d + 150 * d + 20 * d, 14 * d + pr, pr);
         pTxt.setTextAlign(Paint.Align.CENTER);
         pTxt.setFakeBoldText(true);
     }
@@ -62,6 +66,8 @@ public final class Input {
             ctrl.strafe = Math.max(-1, Math.min(1, dx));
             ctrl.fwd = Math.max(-1, Math.min(1, -dy));
             ctrl.run = Math.hypot(ctrl.fwd, ctrl.strafe) > 0.93;
+        } else {
+            ctrl.run = false; // was latching true after joystick release
         }
         return ctrl;
     }
@@ -71,6 +77,12 @@ public final class Input {
     }
 
     private void press(float x, float y, int pid) {
+        if (hit(bPause, x, y)) {
+            game.tasksOpen = false;
+            ctrl.useHeld = false;
+            game.togglePause();
+            return;
+        }
         if (hit(bUse, x, y)) { ctrl.useEdge = true; ctrl.useHeld = true; usePid = pid; return; }
         if (hit(bLight, x, y)) { ctrl.lightEdge = true; return; }
         if (hit(bSneak, x, y)) { ctrl.sneak = !ctrl.sneak; return; }
@@ -89,11 +101,13 @@ public final class Input {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
                 if (g.state != Game.State.PLAYING) { g.onTap(e.getX(), e.getY()); return; }
+                if (g.tasksOpen) { g.tasksOpen = false; ctrl.useEdge = false; ctrl.useHeld = false; return; } // any tap closes the task list
                 press(e.getX(), e.getY(), e.getPointerId(0));
                 break;
             }
             case MotionEvent.ACTION_POINTER_DOWN: {
                 if (g.state != Game.State.PLAYING) { g.onTap(e.getX(e.getActionIndex()), e.getY(e.getActionIndex())); return; }
+                if (g.tasksOpen) { g.tasksOpen = false; return; }
                 int i = e.getActionIndex();
                 press(e.getX(i), e.getY(i), e.getPointerId(i));
                 break;
@@ -180,6 +194,14 @@ public final class Input {
         pTxt.setColor(0xFF9A9AA6);
         pTxt.setTextSize(rSmall * 0.30f);
         c.drawText("TASKS", bTasks.centerX(), bTasks.centerY() + pTxt.getTextSize() * 0.35f, pTxt);
+
+        // pause button (two bars)
+        drawBtn(c, bPause, Color.argb(70, 30, 30, 36), 0xFF9A9AA6);
+        p.setColor(0xFFB9B9C4);
+        float px = bPause.centerX(), py = bPause.centerY();
+        float gap = bPause.width() * 0.10f, bw2 = Math.max(2.5f, bPause.width() * 0.11f);
+        c.drawRoundRect(new RectF(px - gap - bw2, py - bPause.height() * 0.22f, px - gap, py + bPause.height() * 0.22f), 2, 2, p);
+        c.drawRoundRect(new RectF(px + gap, py - bPause.height() * 0.22f, px + gap + bw2, py + bPause.height() * 0.22f), 2, 2, p);
     }
 
     private void drawBtn(Canvas c, RectF r, int fill, int stroke) {
