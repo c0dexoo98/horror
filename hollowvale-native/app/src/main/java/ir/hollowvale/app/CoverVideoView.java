@@ -124,7 +124,13 @@ public class CoverVideoView extends TextureView implements TextureView.SurfaceTe
                     .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                     .build();
             mp.setAudioAttributes(aa);
-            mp.setDataSource(getContext().getResources().openRawResourceFd(id));
+            android.content.res.AssetFileDescriptor afd =
+                    getContext().getResources().openRawResourceFd(id);
+            mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+            try {
+                afd.close(); // MediaPlayer dups the fd internally — close ours
+            } catch (Throwable ignored) {
+            }
             mp.setSurface(surface);
             if (withAudio) {
                 mp.setVolume(audioVolume, audioVolume);
