@@ -1,0 +1,17 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.hollowengine" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+6    <!--
+7         HollowEngine is a pure-Java framework library: it declares no permissions,
+8         no components and no resources of its own. Host apps declare everything.
+9    -->
+10    <uses-feature
+10-->/home/z/my-project/hollowvale-native/engine/src/main/AndroidManifest.xml:5:5-78
+11        android:glEsVersion="0x00020000"
+11-->/home/z/my-project/hollowvale-native/engine/src/main/AndroidManifest.xml:5:19-51
+12        android:required="true" />
+12-->/home/z/my-project/hollowvale-native/engine/src/main/AndroidManifest.xml:5:52-75
+13
+14</manifest>

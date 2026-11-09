@@ -1,24 +1,21 @@
 package ir.hollowvale.app;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.os.Build;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+
+import com.hollowengine.app.ImmersiveActivity;
 
 import ir.hollowvale.game.GameConfig;
 import ir.hollowvale.game.Str;
 import ir.hollowvale.game.World;
 
-/** HOLLOW VALE v4 — the game screen: GL raycast view + HUD overlay. */
-public class GameActivity extends Activity implements Renderer.HudBridge {
+/** HOLLOW VALE v6 — the game screen (on the HollowEngine activity base): GL raycast view + HUD overlay. */
+public class GameActivity extends ImmersiveActivity implements Renderer.HudBridge {
     public World world;
     private GameConfig cfg;
     private AudioSys audio;
@@ -31,13 +28,28 @@ public class GameActivity extends Activity implements Renderer.HudBridge {
     private boolean endingHandled = false;
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+    protected void onConfigureWindow() {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    /** extra full-bleed layout flags + max brightness (same as v4 behavior). */
+    @Override
+    protected void applyImmersive() {
+        super.applyImmersive();
+        View d = getWindow().getDecorView();
+        d.setSystemUiVisibility(d.getSystemUiVisibility()
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 1f;
+        getWindow().setAttributes(lp);
+    }
+
+    @Override
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-        immersive();
 
         cfg = SaveIO.loadConfig(this);
         audio = new AudioSys(this, cfg);
@@ -149,7 +161,6 @@ public class GameActivity extends Activity implements Renderer.HudBridge {
     @Override
     protected void onResume() {
         super.onResume();
-        immersive();
         if (gl != null) gl.onResume();
         if (hud != null) hud.paused = false;
         if (audio != null) audio.resumeAll();
@@ -196,21 +207,4 @@ public class GameActivity extends Activity implements Renderer.HudBridge {
         return super.onKeyDown(keyCode, e);
     }
 
-    private void immersive() {
-        View d = getWindow().getDecorView();
-        d.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        // true full-bleed: extend into the display notch/cutout area (API 28+)
-        WindowManager.LayoutParams lp = getWindow().getAttributes();
-        if (Build.VERSION.SDK_INT >= 28) {
-            lp.layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-        }
-        lp.screenBrightness = 1f;
-        getWindow().setAttributes(lp);
-    }
 }

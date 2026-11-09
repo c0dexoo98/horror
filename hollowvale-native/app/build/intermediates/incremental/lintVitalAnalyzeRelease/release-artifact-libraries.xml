@@ -1,2 +1,16 @@
 <libraries>
+  <library
+      name=":@@:engine::release"
+      jars="/home/z/.gradle/caches/transforms-4/8df76545e2289a9d3d3e68a17c5ff706/transformed/out/jars/classes.jar:/home/z/.gradle/caches/transforms-4/8df76545e2289a9d3d3e68a17c5ff706/transformed/out/jars/libs/R.jar"
+      resolved="hollowvale-native:engine:unspecified"
+      partialResultsDir="/home/z/my-project/hollowvale-native/engine/build/intermediates/lint_vital_partial_results/release/lintVitalAnalyzeRelease/out"
+      folder="/home/z/.gradle/caches/transforms-4/8df76545e2289a9d3d3e68a17c5ff706/transformed/out"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
 </libraries>

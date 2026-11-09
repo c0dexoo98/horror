@@ -1,2 +1,14 @@
 <dependencies>
+  <compile
+      roots=":@@:engine::release">
+    <dependency
+        name=":@@:engine::release"
+        simpleName="artifacts::engine"/>
+  </compile>
+  <package
+      roots=":@@:engine::release">
+    <dependency
+        name=":@@:engine::release"
+        simpleName="artifacts::engine"/>
+  </package>
 </dependencies>

@@ -2,59 +2,48 @@ package ir.hollowvale.app;
 
 import android.content.Context;
 
-import org.json.JSONObject;
+import com.hollowengine.save.SaveStore;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
+
+import org.json.JSONObject;
 
 import ir.hollowvale.game.GameConfig;
 
-/** HOLLOW VALE v4 — file IO for save slots, settings, achievements. */
+/**
+ * HOLLOW VALE v6 — save/settings/achievements IO.
+ * File storage now goes through the engine {@link SaveStore}; the game keeps
+ * its own Persian meta labels and slot conventions on top.
+ */
 public final class SaveIO {
 
+    private static SaveStore store(Context c) {
+        return new SaveStore(c, "saves");
+    }
+
     public static File dir(Context c) {
-        File f = new File(c.getFilesDir(), "saves");
-        if (!f.exists()) f.mkdirs();
-        return f;
+        return store(c).dir();
     }
 
     public static File file(Context c, String name) {
-        return new File(dir(c), name);
+        return store(c).file(name);
     }
 
     public static boolean write(Context c, String name, String data) {
-        try {
-            FileOutputStream fo = new FileOutputStream(file(c, name));
-            fo.write(data.getBytes(StandardCharsets.UTF_8));
-            fo.close();
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        return store(c).write(name, data);
     }
 
     public static String read(Context c, String name) {
-        try {
-            File f = file(c, name);
-            if (!f.exists()) return null;
-            FileInputStream fi = new FileInputStream(f);
-            byte[] b = new byte[(int) f.length()];
-            fi.read(b);
-            fi.close();
-            return new String(b, StandardCharsets.UTF_8);
-        } catch (Throwable t) {
-            return null;
-        }
+        return store(c).read(name);
     }
 
     public static boolean exists(Context c, String name) {
-        return file(c, name).exists() && file(c, name).length() > 10;
+        File f = file(c, name);
+        return f.exists() && f.length() > 10;
     }
 
     public static boolean delete(Context c, String name) {
-        return file(c, name).delete();
+        return store(c).delete(name);
     }
 
     /** meta of a save: playtime/chapter/notes for the menu. */

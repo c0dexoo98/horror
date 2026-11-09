@@ -8,3 +8,11 @@ android-apk/base.apk
 android-apk/aligned.apk
 db/*.db
 bun.lock
+
+# session/build noise
+dev.log
+*.deb
+tool-results/
+upload/
+.gradle/
+HollowEngine/

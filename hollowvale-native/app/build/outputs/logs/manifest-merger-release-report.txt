@@ -4,6 +4,7 @@ ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:2:1-37:12
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:2:1-37:12
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:2:1-37:12
+MERGED from [:engine] /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:2:1-14:12
 	package
 		ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:3:5-28
 		INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
@@ -19,6 +20,8 @@ ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
 		ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:5:22-63
 uses-feature#0x00020000
 ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:6:5-78
+MERGED from [:engine] /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:10:5-12:35
+MERGED from [:engine] /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:10:5-12:35
 	android:glEsVersion
 		ADDED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml:6:19-51
 	android:required
@@ -86,6 +89,8 @@ uses-sdk
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
 INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
+MERGED from [:engine] /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:5:5-44
+MERGED from [:engine] /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:5:5-44
 	android:targetSdkVersion
 		INJECTED from /home/z/my-project/hollowvale-native/app/src/main/AndroidManifest.xml
 	android:minSdkVersion

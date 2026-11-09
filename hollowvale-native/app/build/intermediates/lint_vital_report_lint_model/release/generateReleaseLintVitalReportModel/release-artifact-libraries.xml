@@ -1,2 +1,5 @@
 <libraries>
+  <library
+      name=":@@:engine::release"
+      project=":engine"/>
 </libraries>

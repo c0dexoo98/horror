@@ -8,8 +8,8 @@ android {
         applicationId "ir.hollowvale"
         minSdk 24
         targetSdk 34
-        versionCode 8
-        versionName "5.0.0"
+        versionCode 9
+        versionName "6.0.0"
     }
 
     signingConfigs {
@@ -36,4 +36,10 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+}
+
+// HOLLOW VALE v6 runs on the HollowEngine framework (github.com/c0dexoo98/HollowEngine).
+// engine/ is a vendored snapshot of that repo — see engine/VERSION.txt.
+dependencies {
+    implementation project(':engine')
 }

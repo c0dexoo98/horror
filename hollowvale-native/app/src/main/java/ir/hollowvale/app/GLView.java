@@ -1,15 +1,12 @@
 package ir.hollowvale.app;
 
 import android.content.Context;
-import android.opengl.GLSurfaceView;
 
-/** HOLLOW VALE v4 — GL surface (GLES2, continuous render). */
-public class GLView extends GLSurfaceView {
+import com.hollowengine.app.GameSurfaceView;
+
+/** HOLLOW VALE v6 — GL surface facade over the engine GameSurfaceView (GLES2, continuous). */
+public class GLView extends GameSurfaceView {
     public GLView(Context context, Renderer r) {
-        super(context);
-        setEGLContextClientVersion(2);
-        setRenderer(r);
-        setRenderMode(RENDERMODE_CONTINUOUSLY);
-        setPreserveEGLContextOnPause(true);
+        super(context, r);
     }
 }

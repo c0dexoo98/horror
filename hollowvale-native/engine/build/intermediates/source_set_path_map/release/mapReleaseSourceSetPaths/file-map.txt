@@ -1,0 +1,7 @@
+com.hollowengine-pngs-0 /home/z/my-project/hollowvale-native/engine/build/generated/res/pngs/release
+com.hollowengine-resValues-1 /home/z/my-project/hollowvale-native/engine/build/generated/res/resValues/release
+com.hollowengine-mergeReleaseResources-2 /home/z/my-project/hollowvale-native/engine/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+com.hollowengine-mergeReleaseResources-3 /home/z/my-project/hollowvale-native/engine/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+com.hollowengine-release-4 /home/z/my-project/hollowvale-native/engine/build/intermediates/merged_res/release/mergeReleaseResources
+com.hollowengine-main-5 /home/z/my-project/hollowvale-native/engine/src/main/res
+com.hollowengine-release-6 /home/z/my-project/hollowvale-native/engine/src/release/res

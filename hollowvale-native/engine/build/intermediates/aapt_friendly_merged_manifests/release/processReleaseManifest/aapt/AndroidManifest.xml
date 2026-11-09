@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.hollowengine" >
+
+    <uses-sdk android:minSdkVersion="24" />
+    <!--
+         HollowEngine is a pure-Java framework library: it declares no permissions,
+         no components and no resources of its own. Host apps declare everything.
+    -->
+    <uses-feature
+        android:glEsVersion="0x00020000"
+        android:required="true" />
+
+</manifest>

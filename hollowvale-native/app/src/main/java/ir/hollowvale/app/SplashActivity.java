@@ -1,22 +1,21 @@
 package ir.hollowvale.app;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
-import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
+import com.hollowengine.app.ImmersiveActivity;
+
 /**
- * HOLLOW VALE v4 — cinematic VIDEO splash.
- * Startup: the user's splash.mp4 (with its own audio), full-bleed cover scaling,
- * tap-to-skip, and NEVER crashes: any error falls back to an animated canvas
- * splash, then continues to the next stage.
+ * HOLLOW VALE v6 — cinematic VIDEO splash (on the HollowEngine activity base).
+ * Startup: the user's splash.mp4 (with its own audio), fit-complete presentation
+ * with blurred backdrop (engine VideoStage), tap-to-skip, and NEVER crashes:
+ * any error falls back to an animated canvas splash, then continues.
  */
-public class SplashActivity extends Activity {
+public class SplashActivity extends ImmersiveActivity {
     private CoverVideoView video;
     private FallbackSplashView fallback;
     private boolean done = false;
@@ -24,11 +23,14 @@ public class SplashActivity extends Activity {
     private String then = "menu";
 
     @Override
+    protected void onConfigureWindow() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-        immersive();
         which = getIntent().getStringExtra("video");
         if (which == null || which.isEmpty()) which = "splash";
         String t2 = getIntent().getStringExtra("then");
@@ -142,22 +144,6 @@ public class SplashActivity extends Activity {
         try {
             if (video != null) video.release();
         } catch (Throwable ignored) {
-        }
-    }
-
-    private void immersive() {
-        View d = getWindow().getDecorView();
-        d.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        // true full-bleed: extend into the display notch/cutout area (API 28+)
-        if (Build.VERSION.SDK_INT >= 28) {
-            WindowManager.LayoutParams lp = getWindow().getAttributes();
-            lp.layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            getWindow().setAttributes(lp);
         }
     }
 }
