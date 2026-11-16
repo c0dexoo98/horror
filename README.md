@@ -25,6 +25,17 @@ bash game/verify.sh     # باید ALL GREEN بماند
 
 جزئیات کامل: [game/README.md](game/README.md) — کنترل‌ها، سیستم‌ها، ساختار صحنه.
 
+## اندروید
+
+**[دانلود hollow-vale.apk](../../releases/latest/download/hollow-vale.apk)** — نسخهٔ ۱.۱ (حدود ۷۰KB)، Android 8+
+
+- نصب: فایل را دانلود و باز کنید (Allow unknown sources)؛ امضای debug برای نصب شخصی است.
+- کنترل‌های لمسی: `RESTART` / `PAUSE` / `SPEED ×1→×2→×4→×12` / `LOG` (گزارش مأموریت‌ها).
+- چرا فقط ۷۰KB؟ چون هیچ کتابخانهٔ خارجی وجود ندارد — کل موتور سه‌بعدی (رستر، فیزیک، نور، مه، فونت HUD)
+  و کل کمپین، جاوا خالص و assetهای متنی‌اند. همین APK با `runtime-android/build.sh` در موتور ساخته می‌شود
+  (javac → D8 → aapt2 → apksigner، بدون gradle).
+- کمپین قطعی است: همان اجرای دسکتاپ، در ×12 حدود ۶ دقیقه تا `ENDING: ESCAPED`.
+
 ## وب
 
 صفحهٔ `src/app/page.tsx` حالا یک لندینگ استاتیک با اسکرین‌شات‌های رندرشدهٔ خود موتور است
