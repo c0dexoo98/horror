@@ -1,0 +1,1490 @@
+{
+ "hscene": 2,
+ "name": "hollow-vale",
+ "clear_color": "#05060a",
+ "ambient": 0.18,
+ "gravity": 9.8,
+ "fog": 0.35,
+ "shadow_plane_y": -1.0,
+ "vignette": 0.45,
+ "root": {
+  "name": "root",
+  "type": "node",
+  "position": [
+   0,
+   0,
+   0
+  ],
+  "rotation": [
+   0,
+   0,
+   0
+  ],
+  "scale": [
+   1,
+   1,
+   1
+  ],
+  "visible": true,
+  "children": [
+   {
+    "name": "ground",
+    "type": "mesh",
+    "position": [
+     0,
+     -1.05,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     33,
+     0.1,
+     33
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3b5e3e",
+    "children": []
+   },
+   {
+    "name": "wall_n",
+    "type": "mesh",
+    "position": [
+     0,
+     1,
+     -27.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     33,
+     2,
+     1
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "wall_s",
+    "type": "mesh",
+    "position": [
+     0,
+     1,
+     27.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     33,
+     2,
+     1
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "wall_e",
+    "type": "mesh",
+    "position": [
+     16.5,
+     1,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     2,
+     33
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "wall_w",
+    "type": "mesh",
+    "position": [
+     -16.5,
+     1,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     2,
+     33
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "ch_n",
+    "type": "mesh",
+    "position": [
+     0,
+     1.4,
+     -19.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     10,
+     1.8,
+     0.6
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "ch_w",
+    "type": "mesh",
+    "position": [
+     -4.7,
+     1.4,
+     -16
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.6,
+     1.8,
+     7.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "ch_e",
+    "type": "mesh",
+    "position": [
+     4.7,
+     1.4,
+     -16
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.6,
+     1.8,
+     7.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "ch_s1",
+    "type": "mesh",
+    "position": [
+     -3.7,
+     1.4,
+     -12.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     2.6,
+     1.8,
+     0.6
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "ch_s2",
+    "type": "mesh",
+    "position": [
+     3.7,
+     1.4,
+     -12.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     2.6,
+     1.8,
+     0.6
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#3a3f44",
+    "children": []
+   },
+   {
+    "name": "door_church",
+    "type": "mesh",
+    "position": [
+     0,
+     1.0,
+     -12.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     2.4,
+     1.8,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#5a3d22",
+    "children": []
+   },
+   {
+    "name": "altar",
+    "type": "mesh",
+    "position": [
+     0,
+     0.9,
+     -18.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.4,
+     0.5,
+     0.9
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#8a6d3b",
+    "children": []
+   },
+   {
+    "name": "pedestal",
+    "type": "mesh",
+    "position": [
+     0,
+     0.3,
+     -18.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.8,
+     1.0,
+     1.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6e5636",
+    "children": []
+   },
+   {
+    "name": "cross",
+    "type": "mesh",
+    "position": [
+     0,
+     2.6,
+     -18.3
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.2,
+     1.0,
+     0.2
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#c9b070",
+    "children": []
+   },
+   {
+    "name": "candle_a",
+    "type": "mesh",
+    "position": [
+     -3,
+     0.4,
+     -17
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.2,
+     0.8,
+     0.2
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#e8dfc8",
+    "children": []
+   },
+   {
+    "name": "candle_b",
+    "type": "mesh",
+    "position": [
+     3,
+     0.4,
+     -17
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.2,
+     0.8,
+     0.2
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#e8dfc8",
+    "children": []
+   },
+   {
+    "name": "candle_light_a",
+    "type": "light",
+    "position": [
+     -3,
+     1.4,
+     -17
+    ],
+    "rotation": [
+     -80,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#ff9d45",
+    "intensity": 1.1,
+    "reach": 8,
+    "children": []
+   },
+   {
+    "name": "candle_light_b",
+    "type": "light",
+    "position": [
+     3,
+     1.4,
+     -17
+    ],
+    "rotation": [
+     -80,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#ff9d45",
+    "intensity": 1.1,
+    "reach": 8,
+    "children": []
+   },
+   {
+    "name": "house_1",
+    "type": "mesh",
+    "position": [
+     -12,
+     1.4,
+     5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_1",
+    "type": "mesh",
+    "position": [
+     -12,
+     2.45,
+     5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "house_2",
+    "type": "mesh",
+    "position": [
+     12,
+     1.4,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_2",
+    "type": "mesh",
+    "position": [
+     12,
+     2.45,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "house_3",
+    "type": "mesh",
+    "position": [
+     -14,
+     1.4,
+     -4
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_3",
+    "type": "mesh",
+    "position": [
+     -14,
+     2.45,
+     -4
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "house_4",
+    "type": "mesh",
+    "position": [
+     15,
+     1.4,
+     -2
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_4",
+    "type": "mesh",
+    "position": [
+     15,
+     2.45,
+     -2
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "house_5",
+    "type": "mesh",
+    "position": [
+     -10,
+     1.4,
+     -10
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_5",
+    "type": "mesh",
+    "position": [
+     -10,
+     2.45,
+     -10
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "house_6",
+    "type": "mesh",
+    "position": [
+     10,
+     1.4,
+     -12
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4,
+     1.6,
+     3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#2b2b30",
+    "children": []
+   },
+   {
+    "name": "roof_6",
+    "type": "mesh",
+    "position": [
+     10,
+     2.45,
+     -12
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     4.4,
+     0.35,
+     3.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#1f2126",
+    "children": []
+   },
+   {
+    "name": "lantern_a",
+    "type": "mesh",
+    "position": [
+     -12,
+     1.1,
+     8.4
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.4,
+     1.2,
+     0.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6e5636",
+    "children": []
+   },
+   {
+    "name": "lantern_b",
+    "type": "mesh",
+    "position": [
+     12,
+     1.1,
+     10.4
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.4,
+     1.2,
+     0.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6e5636",
+    "children": []
+   },
+   {
+    "name": "lantern_light_a",
+    "type": "light",
+    "position": [
+     -12,
+     2.2,
+     8.4
+    ],
+    "rotation": [
+     -80,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#ffb050",
+    "intensity": 1.0,
+    "reach": 9,
+    "children": []
+   },
+   {
+    "name": "lantern_light_b",
+    "type": "light",
+    "position": [
+     12,
+     2.2,
+     10.4
+    ],
+    "rotation": [
+     -80,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#ffb050",
+    "intensity": 1.0,
+    "reach": 9,
+    "children": []
+   },
+   {
+    "name": "well",
+    "type": "mesh",
+    "position": [
+     0,
+     0.5,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.4,
+     1.2,
+     1.4
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#55606a",
+    "children": []
+   },
+   {
+    "name": "well_post",
+    "type": "mesh",
+    "position": [
+     0,
+     1.5,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.0,
+     0.25,
+     0.25
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#5a3d22",
+    "children": []
+   },
+   {
+    "name": "gate_post_e",
+    "type": "mesh",
+    "position": [
+     3.6,
+     1.2,
+     25
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.7,
+     2.6,
+     0.7
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#5a3d22",
+    "children": []
+   },
+   {
+    "name": "gate_post_w",
+    "type": "mesh",
+    "position": [
+     -3.6,
+     1.2,
+     25
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.7,
+     2.6,
+     0.7
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#5a3d22",
+    "children": []
+   },
+   {
+    "name": "gate_bar",
+    "type": "mesh",
+    "position": [
+     0,
+     1.6,
+     25
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     6.5,
+     0.7,
+     0.5
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#4a3421",
+    "children": []
+   },
+   {
+    "name": "gate_sign",
+    "type": "mesh",
+    "position": [
+     0,
+     2.6,
+     25
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.6,
+     0.5,
+     0.15
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#4a3421",
+    "children": []
+   },
+   {
+    "name": "note_1",
+    "type": "mesh",
+    "position": [
+     0,
+     0.35,
+     20.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_2",
+    "type": "mesh",
+    "position": [
+     -4.5,
+     0.35,
+     12
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_3",
+    "type": "mesh",
+    "position": [
+     6.5,
+     0.35,
+     3
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_4",
+    "type": "mesh",
+    "position": [
+     0,
+     0.35,
+     -2
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_5",
+    "type": "mesh",
+    "position": [
+     -8,
+     0.35,
+     -8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_6",
+    "type": "mesh",
+    "position": [
+     7,
+     0.35,
+     -7
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_7",
+    "type": "mesh",
+    "position": [
+     0,
+     1.35,
+     -14.6
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "note_8",
+    "type": "mesh",
+    "position": [
+     -2.6,
+     1.05,
+     -17.2
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.08,
+     0.22
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8d3c0",
+    "children": []
+   },
+   {
+    "name": "key_rusty",
+    "type": "mesh",
+    "position": [
+     0,
+     1.35,
+     8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.28,
+     0.1,
+     0.28
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#b08030",
+    "children": []
+   },
+   {
+    "name": "charm_1",
+    "type": "mesh",
+    "position": [
+     -12,
+     0.35,
+     10.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.3,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8b64a",
+    "children": []
+   },
+   {
+    "name": "charm_2",
+    "type": "mesh",
+    "position": [
+     12,
+     0.35,
+     13
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.3,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8b64a",
+    "children": []
+   },
+   {
+    "name": "charm_3",
+    "type": "mesh",
+    "position": [
+     -14,
+     0.35,
+     1.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.3,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8b64a",
+    "children": []
+   },
+   {
+    "name": "charm_4",
+    "type": "mesh",
+    "position": [
+     10,
+     0.35,
+     -6.5
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.3,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8b64a",
+    "children": []
+   },
+   {
+    "name": "charm_5",
+    "type": "mesh",
+    "position": [
+     -6,
+     0.35,
+     14
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.3,
+     0.3,
+     0.3
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#d8b64a",
+    "children": []
+   },
+   {
+    "name": "nest_1",
+    "type": "mesh",
+    "position": [
+     -15,
+     0.35,
+     -8
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.0,
+     0.7,
+     1.0
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6b1f1f",
+    "children": []
+   },
+   {
+    "name": "nest_2",
+    "type": "mesh",
+    "position": [
+     15,
+     0.35,
+     -6
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.0,
+     0.7,
+     1.0
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6b1f1f",
+    "children": []
+   },
+   {
+    "name": "nest_3",
+    "type": "mesh",
+    "position": [
+     -8,
+     0.35,
+     -16
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.0,
+     0.7,
+     1.0
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6b1f1f",
+    "children": []
+   },
+   {
+    "name": "nest_4",
+    "type": "mesh",
+    "position": [
+     8,
+     0.35,
+     -16
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1.0,
+     0.7,
+     1.0
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#6b1f1f",
+    "children": []
+   },
+   {
+    "name": "player",
+    "type": "mesh",
+    "position": [
+     0,
+     0.2,
+     22
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     0.8,
+     0.8,
+     0.8
+    ],
+    "visible": true,
+    "mesh": "cube.obj",
+    "color": "#c9b070",
+    "children": [],
+    "dynamic": true,
+    "bounciness": 0.1
+   },
+   {
+    "name": "moon",
+    "type": "light",
+    "position": [
+     0,
+     30,
+     -5
+    ],
+    "rotation": [
+     -55,
+     20,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#a8b6ff",
+    "intensity": 0.9,
+    "reach": 0,
+    "children": []
+   },
+   {
+    "name": "flashlight",
+    "type": "light",
+    "position": [
+     0,
+     0.6,
+     22
+    ],
+    "rotation": [
+     -12,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "color": "#e6d9a8",
+    "intensity": 1.5,
+    "reach": 16,
+    "children": []
+   },
+   {
+    "name": "camera",
+    "type": "camera",
+    "position": [
+     0,
+     3,
+     28
+    ],
+    "rotation": [
+     -22,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "fov": 60,
+    "near": 0.1,
+    "far": 200,
+    "active": true,
+    "children": []
+   },
+   {
+    "name": "game",
+    "type": "script",
+    "position": [
+     0,
+     0,
+     0
+    ],
+    "rotation": [
+     0,
+     0,
+     0
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "visible": true,
+    "path": "vale.hs",
+    "children": []
+   }
+  ]
+ }
+}
